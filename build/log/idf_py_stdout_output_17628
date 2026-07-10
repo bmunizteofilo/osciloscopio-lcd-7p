@@ -1,0 +1,78 @@
+Command: C:\Users\Bruno\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:\esp\v5.5.3\tools/idf_monitor.py -p COM10 -b 115200 --toolchain-prefix xtensa-esp32s3-elf- --target esp32s3 --revision 0 C:\Users\Bruno\workspace_esp32\lcd_7p\build\lcd_7p.elf C:\Users\Bruno\workspace_esp32\lcd_7p\build\bootloader\bootloader.elf --force-color -m 'C:\Users\Bruno\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' 'C:\esp\v5.5.3\tools\idf.py'
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x1 (POWERON),boot:0x8 (SPI_FAST_FLASH_BOOT)
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x14f0
+load:0x403c8700,len:0xd24
+load:0x403cb700,len:0x2ef0
+entry 0x403c8924
+[0;32mI (24) boot: ESP-IDF v5.5.3 2nd stage bootloader[0m
+[0;32mI (25) boot: compile time Jul  6 2026 11:17:05[0m
+[0;32mI (25) boot: Multicore bootloader[0m
+[0;32mI (25) boot: chip revision: v0.2[0m
+[0;32mI (28) boot: efuse block revision: v1.3[0m
+[0;32mI (31) boot.esp32s3: Boot SPI Speed : 80MHz[0m
+[0;32mI (35) boot.esp32s3: SPI Mode       : DIO[0m
+[0;32mI (39) boot.esp32s3: SPI Flash Size : 16MB[0m
+[0;32mI (43) boot: Enabling RNG early entropy source...[0m
+[0;32mI (47) boot: Partition Table:[0m
+[0;32mI (50) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (56) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (63) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (69) boot:  2 factory          factory app      00 00 00010000 00300000[0m
+[0;32mI (76) boot:  3 storage          Unknown data     01 82 00310000 00c00000[0m
+[0;32mI (82) boot: End of partition table[0m
+[0;32mI (86) esp_image: segment 0: paddr=00010020 vaddr=3c050020 size=11d6ch ( 73068) map[0m
+[0;32mI (106) esp_image: segment 1: paddr=00021d94 vaddr=3fc92f00 size=03560h ( 13664) load[0m
+[0;32mI (109) esp_image: segment 2: paddr=000252fc vaddr=40374000 size=0ad1ch ( 44316) load[0m
+[0;32mI (119) esp_image: segment 3: paddr=00030020 vaddr=42000020 size=4e950h (321872) map[0m
+[0;32mI (176) esp_image: segment 4: paddr=0007e978 vaddr=4037ed1c size=04158h ( 16728) load[0m
+[0;32mI (180) esp_image: segment 5: paddr=00082ad8 vaddr=50000000 size=00020h (    32) load[0m
+[0;32mI (187) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (187) boot: Disabling RNG early entropy source...[0m
+[0;32mI (202) octal_psram: vendor id    : 0x0d (AP)[0m
+[0;32mI (202) octal_psram: dev id       : 0x02 (generation 3)[0m
+[0;32mI (202) octal_psram: density      : 0x03 (64 Mbit)[0m
+[0;32mI (204) octal_psram: good-die     : 0x01 (Pass)[0m
+[0;32mI (208) octal_psram: Latency      : 0x01 (Fixed)[0m
+[0;32mI (213) octal_psram: VCC          : 0x01 (3V)[0m
+[0;32mI (217) octal_psram: SRF          : 0x01 (Fast Refresh)[0m
+[0;32mI (222) octal_psram: BurstType    : 0x01 (Hybrid Wrap)[0m
+[0;32mI (227) octal_psram: BurstLen     : 0x01 (32 Byte)[0m
+[0;32mI (231) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)[0m
+[0;32mI (236) octal_psram: DriveStrength: 0x00 (1/1)[0m
+[0;32mI (240) MSPI Timing: Enter psram timing tuning[0m
+[0;32mI (245) esp_psram: Found 8MB PSRAM device[0m
+[0;32mI (248) esp_psram: Speed: 80MHz[0m
+[0;32mI (251) cpu_start: Multicore app[0m
+[0;32mI (693) esp_psram: SPI SRAM memory test OK[0m
+[0;32mI (702) cpu_start: GPIO 44 and 43 are used as console UART I/O pins[0m
+[0;32mI (702) cpu_start: Pro cpu start user code[0m
+[0;32mI (702) cpu_start: cpu freq: 240000000 Hz[0m
+[0;32mI (704) app_init: Application information:[0m
+[0;32mI (708) app_init: Project name:     lcd_7p[0m
+[0;32mI (712) app_init: App version:      1[0m
+[0;32mI (715) app_init: Compile time:     Jul  6 2026 17:24:32[0m
+[0;32mI (720) app_init: ELF file SHA256:  316b66a72...[0m
+[0;32mI (724) app_init: ESP-IDF:          v5.5.3[0m
+[0;32mI (728) efuse_init: Min chip rev:     v0.0[0m
+[0;32mI (732) efuse_init: Max chip rev:     v0.99 [0m
+[0;32mI (736) efuse_init: Chip rev:         v0.2[0m
+[0;32mI (740) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (746) heap_init: At 3FC97000 len 00052710 (329 KiB): RAM[0m
+[0;32mI (751) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM[0m
+[0;32mI (756) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM[0m
+[0;32mI (762) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM[0m
+[0;32mI (767) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator[0m
+[0;32mI (774) spi_flash: detected chip: generic[0m
+[0;32mI (777) spi_flash: flash io: dio[0m
+[0;32mI (780) sleep_gpio: Configure to isolate all GPIO pins in sleep state[0m
+[0;32mI (786) sleep_gpio: Enable automatic switching of GPIO sleep configuration[0m
+[0;32mI (793) main_task: Started on CPU0[0m
+[0;32mI (817) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations[0m
+[0;32mI (817) main_task: Calling app_main()[0m
+[0;32mI (818) app: Inicializando WT32S3-07S[0m
+[0;32mI (821) aw9523b: AW9523B detectado no endereco I2C 0x5b[0m
+[0;32mI (1185) app: Inicializacao concluida; framebuffer RGB esta na PSRAM externa[0m

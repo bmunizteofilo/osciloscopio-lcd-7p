@@ -1,0 +1,32 @@
+Command: C:\Users\Bruno\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:\esp\v5.5.3\tools/idf_monitor.py -p COM10 -b 115200 --toolchain-prefix xtensa-esp32s3-elf- --target esp32s3 --revision 0 C:\Users\Bruno\workspace_esp32\lcd_7p\build\lcd_7p.elf C:\Users\Bruno\workspace_esp32\lcd_7p\build\bootloader\bootloader.elf --force-color -m 'C:\Users\Bruno\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' 'C:\esp\v5.5.3\tools\idf.py'
+[0;33m--- Warning: GDB cannot open serial ports accessed as COMx[0m
+[0;33m--- Using \\.\COM10 instead...[0m
+[0;33m--- esp-idf-monitor 1.9.0 on \\.\COM10 115200[0m
+[0;33m--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H[0m
+[0m--- 0x403c8700: [0;33m_stext[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m--- 0x403c8924: [0;33mcall_start_cpu0[0m[0m at [0;32mC:/esp/v5.5.3/components/bootloader/subproject/main/bootloader_start.c[0m[0m:[1;31m27[0m
+[0m--- 0x4203d5f3: [0;33mtask_wdt_timeout_handling[0m[0m at [0;32mC:/esp/v5.5.3/components/esp_system/task_wdt/task_wdt.c[0m[0m:[1;31m436[0m
+[0m--- (inlined by) [0;33mtask_wdt_isr[0m[0m at [0;32mC:/esp/v5.5.3/components/esp_system/task_wdt/task_wdt.c[0m[0m:[1;31m509[0m
+[0m--- 0x4037af0d: [0;33m_xt_lowint1[0m[0m at [0;32mC:/esp/v5.5.3/components/xtensa/xtensa_vectors.S[0m[0m:[1;31m1240[0m
+[0m--- 0x4201ac6d: [0;33mlv_style_prop_get_default[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/misc/lv_style.c[0m[0m:[1;31m415[0m
+[0m--- 0x420102e7: [0;33mlv_obj_get_style_prop[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_style.c[0m[0m:[1;31m362[0m
+[0m--- (inlined by) [0;33mlv_obj_get_style_prop[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_style.c[0m[0m:[1;31m351[0m
+[0m--- 0x4200f172: [0;33mlv_obj_get_style_margin_bottom[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_style_gen.h[0m[0m:[1;31m204[0m
+[0m--- (inlined by) [0;33mlv_obj_get_scroll_bottom[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_scroll.c[0m[0m:[1;31m147[0m
+[0m--- (inlined by) [0;33mlv_obj_get_scroll_bottom[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_scroll.c[0m[0m:[1;31m136[0m
+[0m--- 0x4200f853: [0;33mlv_obj_get_scrollbar_area[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_scroll.c[0m[0m:[1;31m482[0m
+[0m--- (inlined by) [0;33mlv_obj_get_scrollbar_area[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_scroll.c[0m[0m:[1;31m461[0m
+[0m--- 0x4200fe88: [0;33mlv_obj_scrollbar_invalidate[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_scroll.c[0m[0m:[1;31m641[0m
+[0m--- 0x4200e7be: [0;33mlv_obj_move_to[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_pos.c[0m[0m:[1;31m773[0m
+[0m--- 0x4200e81d: [0;33mlv_obj_refr_pos[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_pos.c[0m[0m:[1;31m705[0m
+[0m--- (inlined by) [0;33mlv_obj_refr_pos[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_pos.c[0m[0m:[1;31m625[0m
+[0m--- 0x4200ea4e: [0;33mlayout_update_core[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_pos.c[0m[0m:[1;31m1248[0m
+[0m--- 0x4200ea7d: [0;33mlayout_update_core[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_pos.c[0m[0m:[1;31m1242[0m
+[0m--- 0x4200eaba: [0;33mlv_obj_update_layout[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_pos.c[0m[0m:[1;31m321[0m
+[0m--- (inlined by) [0;33mlv_obj_update_layout[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_obj_pos.c[0m[0m:[1;31m307[0m
+[0m--- 0x420122e0: [0;33mlv_display_refr_timer[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m396[0m
+[0m--- 0x4201b556: [0;33mlv_timer_exec[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/misc/lv_timer.c[0m[0m:[1;31m327[0m
+[0m--- (inlined by) [0;33mlv_timer_handler[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/misc/lv_timer.c[0m[0m:[1;31m107[0m
+[0m--- (inlined by) [0;33mlv_timer_handler[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/managed_components/lvgl__lvgl/src/misc/lv_timer.c[0m[0m:[1;31m63[0m
+[0m--- 0x42008b2e: [0;33mapp_lvgl_task[0m[0m at [0;32mC:/Users/Bruno/workspace_esp32/lcd_7p/components/app_lvgl/src/app_lvgl.c[0m[0m:[1;31m565[0m
+[0m
