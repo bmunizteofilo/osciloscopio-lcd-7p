@@ -134,7 +134,8 @@ typedef struct {
     lv_timer_t *trigger_hide_timer;
     lv_obj_t *backlight_slider;
     lv_obj_t *backlight_label;
-    int16_t waveform_samples[2][APP_LVGL_CHART_POINT_COUNT];
+    lv_chart_series_t *ch1_series;
+    lv_chart_series_t *ch2_series;
     bool channel_visible[4];
     app_lvgl_cursor_mode_t cursor_mode;
     app_lvgl_theme_t theme;
@@ -143,10 +144,10 @@ typedef struct {
     uint8_t backlight_percent;
     uint32_t time_base_us_per_div;
     uint32_t voltage_base_mv_per_div;
-    uint32_t waveform_head;
-    uint32_t waveform_count;
+    uint32_t chart_sample_index;
     uint32_t square_phase_us;
     uint32_t chart_point_accumulator_q8;
+    bool chart_filled;
     SemaphoreHandle_t lock;
     TaskHandle_t task;
 } app_lvgl_context_t;
@@ -677,9 +678,15 @@ static void app_lvgl_channel_button_event_cb(lv_event_t *event)
     }
 
     s_lvgl.channel_visible[channel_index] = !s_lvgl.channel_visible[channel_index];
+    if (channel_index == 0 && s_lvgl.ch1_series != NULL) {
+        lv_chart_hide_series(s_lvgl.chart, s_lvgl.ch1_series, !s_lvgl.channel_visible[channel_index]);
+    } else if (channel_index == 1 && s_lvgl.ch2_series != NULL) {
+        lv_chart_hide_series(s_lvgl.chart, s_lvgl.ch2_series, !s_lvgl.channel_visible[channel_index]);
+    }
+
     app_lvgl_update_channel_button(channel_index);
     if (s_lvgl.chart != NULL) {
-        lv_obj_invalidate(s_lvgl.chart);
+        lv_chart_refresh(s_lvgl.chart);
     }
 }
 
@@ -1048,7 +1055,7 @@ static void app_lvgl_chart_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
 
-    if (s_lvgl.chart == NULL) {
+    if (s_lvgl.chart == NULL || s_lvgl.ch1_series == NULL || s_lvgl.ch2_series == NULL) {
         return;
     }
     if (s_lvgl.paused) {
@@ -1062,65 +1069,21 @@ static void app_lvgl_chart_timer_cb(lv_timer_t *timer)
         const bool high = app_lvgl_next_square_state(sample_time_us);
         const int32_t ch1_sample = high ? APP_LVGL_CH1_HIGH : APP_LVGL_CH1_LOW;
         const int32_t ch2_sample = high ? APP_LVGL_CH2_HIGH : APP_LVGL_CH2_LOW;
-        const uint32_t write_index = (s_lvgl.waveform_head + s_lvgl.waveform_count) % APP_LVGL_CHART_POINT_COUNT;
-        s_lvgl.waveform_samples[0][write_index] = (int16_t)ch1_sample;
-        s_lvgl.waveform_samples[1][write_index] = (int16_t)ch2_sample;
-
-        if (s_lvgl.waveform_count < APP_LVGL_CHART_POINT_COUNT) {
-            s_lvgl.waveform_count++;
+        if (!s_lvgl.chart_filled) {
+            lv_chart_set_series_value_by_id(s_lvgl.chart, s_lvgl.ch1_series, s_lvgl.chart_sample_index, ch1_sample);
+            lv_chart_set_series_value_by_id(s_lvgl.chart, s_lvgl.ch2_series, s_lvgl.chart_sample_index, ch2_sample);
+            s_lvgl.chart_sample_index++;
+            if (s_lvgl.chart_sample_index >= APP_LVGL_CHART_POINT_COUNT) {
+                s_lvgl.chart_filled = true;
+                lv_chart_set_update_mode(s_lvgl.chart, LV_CHART_UPDATE_MODE_SHIFT);
+            }
         } else {
-            s_lvgl.waveform_head = (s_lvgl.waveform_head + 1U) % APP_LVGL_CHART_POINT_COUNT;
+            lv_chart_set_next_value(s_lvgl.chart, s_lvgl.ch1_series, ch1_sample);
+            lv_chart_set_next_value(s_lvgl.chart, s_lvgl.ch2_series, ch2_sample);
         }
     }
 
-    lv_obj_invalidate(s_lvgl.chart);
-}
-
-/**
- * @brief Desenha os dois canais a partir de um ring buffer, sem deslocar amostras.
- *
- * O indice mais antigo ocupa a coluna esquerda. Ao sobrescrever o ring buffer, o
- * indice inicial avanca uma coluna e mantem o efeito visual de esteira.
- */
-static void app_lvgl_waveform_draw_event_cb(lv_event_t *event)
-{
-    if (s_lvgl.waveform_count < 2) {
-        return;
-    }
-
-    lv_obj_t *obj = lv_event_get_target_obj(event);
-    lv_area_t coords;
-    lv_obj_get_coords(obj, &coords);
-
-    lv_draw_line_dsc_t line_dsc;
-    lv_draw_line_dsc_init(&line_dsc);
-    line_dsc.width = 2;
-    line_dsc.opa = LV_OPA_COVER;
-    line_dsc.raw_end = 1;
-
-    const int32_t height = lv_area_get_height(&coords);
-    const uint32_t value_range = APP_LVGL_ADC_CENTER * 2U;
-    const uint32_t point_count = s_lvgl.waveform_count;
-
-    for (uint8_t channel = 0; channel < 2; channel++) {
-        if (!s_lvgl.channel_visible[channel]) {
-            continue;
-        }
-
-        line_dsc.color = lv_color_hex(APP_LVGL_CHANNEL_COLORS[channel]);
-        for (uint32_t x = 1; x < point_count; x++) {
-            const uint32_t previous_index = (s_lvgl.waveform_head + x - 1U) % APP_LVGL_CHART_POINT_COUNT;
-            const uint32_t current_index = (s_lvgl.waveform_head + x) % APP_LVGL_CHART_POINT_COUNT;
-            const int32_t previous_value = s_lvgl.waveform_samples[channel][previous_index];
-            const int32_t current_value = s_lvgl.waveform_samples[channel][current_index];
-
-            line_dsc.p1.x = coords.x1 + (int32_t)x - 1;
-            line_dsc.p2.x = coords.x1 + (int32_t)x;
-            line_dsc.p1.y = coords.y1 + ((int32_t)(value_range - previous_value) * (height - 1) / (int32_t)value_range);
-            line_dsc.p2.y = coords.y1 + ((int32_t)(value_range - current_value) * (height - 1) / (int32_t)value_range);
-            lv_draw_line(lv_event_get_layer(event), &line_dsc);
-        }
-    }
+    lv_chart_refresh(s_lvgl.chart);
 }
 
 /**
@@ -1130,21 +1093,38 @@ static void app_lvgl_waveform_draw_event_cb(lv_event_t *event)
  */
 static void app_lvgl_create_waveform_chart(lv_obj_t *parent)
 {
-    s_lvgl.chart = lv_obj_create(parent);
+    s_lvgl.chart = lv_chart_create(parent);
     lv_obj_remove_style_all(s_lvgl.chart);
     lv_obj_set_size(s_lvgl.chart, APP_LVGL_WAVEFORM_INNER_WIDTH, APP_LVGL_WAVEFORM_INNER_HEIGHT);
     lv_obj_set_pos(s_lvgl.chart, APP_LVGL_WAVEFORM_INNER_X, APP_LVGL_WAVEFORM_INNER_Y);
     lv_obj_set_style_bg_opa(s_lvgl.chart, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_lvgl.chart, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(s_lvgl.chart, 0, LV_PART_MAIN);
-    lv_obj_add_event_cb(s_lvgl.chart, app_lvgl_waveform_draw_event_cb, LV_EVENT_DRAW_MAIN, NULL);
+    lv_obj_set_style_line_width(s_lvgl.chart, 2, LV_PART_ITEMS);
+    lv_obj_set_style_width(s_lvgl.chart, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_height(s_lvgl.chart, 0, LV_PART_INDICATOR);
 
-    s_lvgl.waveform_head = 0;
-    s_lvgl.waveform_count = 0;
+    lv_chart_set_type(s_lvgl.chart, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(s_lvgl.chart, APP_LVGL_CHART_POINT_COUNT);
+    lv_chart_set_axis_range(s_lvgl.chart, LV_CHART_AXIS_PRIMARY_Y, 0, APP_LVGL_ADC_CENTER * 2);
+    lv_chart_set_div_line_count(s_lvgl.chart, 0, 0);
+    lv_chart_set_update_mode(s_lvgl.chart, LV_CHART_UPDATE_MODE_CIRCULAR);
+
+    s_lvgl.ch1_series = lv_chart_add_series(s_lvgl.chart, lv_color_hex(APP_LVGL_CHANNEL_COLORS[0]), LV_CHART_AXIS_PRIMARY_Y);
+    s_lvgl.ch2_series = lv_chart_add_series(s_lvgl.chart, lv_color_hex(APP_LVGL_CHANNEL_COLORS[1]), LV_CHART_AXIS_PRIMARY_Y);
+    if (s_lvgl.ch1_series != NULL) {
+        lv_chart_set_all_values(s_lvgl.chart, s_lvgl.ch1_series, LV_CHART_POINT_NONE);
+    }
+    if (s_lvgl.ch2_series != NULL) {
+        lv_chart_set_all_values(s_lvgl.chart, s_lvgl.ch2_series, LV_CHART_POINT_NONE);
+    }
+
+    s_lvgl.chart_sample_index = 0;
     s_lvgl.time_base_us_per_div = APP_LVGL_DEFAULT_TIME_BASE_US_PER_DIV;
     s_lvgl.voltage_base_mv_per_div = APP_LVGL_DEFAULT_VOLTAGE_BASE_MV_PER_DIV;
     s_lvgl.square_phase_us = 0;
     s_lvgl.chart_point_accumulator_q8 = 0;
+    s_lvgl.chart_filled = false;
     s_lvgl.paused = false;
     lv_timer_create(app_lvgl_chart_timer_cb, APP_LVGL_CHART_TIMER_MS, NULL);
 }
