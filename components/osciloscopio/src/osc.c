@@ -27,12 +27,17 @@
 #define OSC_WAVEFORM_HEIGHT 368
 #define OSC_WAVEFORM_BORDER 2
 #define OSC_CHANNEL_BUTTON_PANEL_WIDTH 100
+#define OSC_INFORMATION_PANEL_WIDTH 100
 #define OSC_CHANNEL_BUTTON_GAP 4
 #define OSC_CHANNEL_BUTTON_Y_OFFSET 3
 #define OSC_CHANNEL_BUTTON_WIDTH 92
 #define OSC_CHANNEL_BUTTON_HEIGHT 86
+#define OSC_INFORMATION_PANEL_CONTENT_WIDTH (OSC_CHANNEL_BUTTON_WIDTH + 8)
 #define OSC_WAVEFORM_X OSC_CHANNEL_BUTTON_PANEL_WIDTH
-#define OSC_WAVEFORM_WIDTH (OSC_SCREEN_WIDTH - OSC_WAVEFORM_X)
+#define OSC_WAVEFORM_WIDTH 590
+#define OSC_INFORMATION_PANEL_X (OSC_WAVEFORM_X + OSC_WAVEFORM_WIDTH)
+#define OSC_WAVEFORM_VERTICAL_DIVISION_WIDTH 59
+#define OSC_WAVEFORM_CENTER_X (OSC_WAVEFORM_X + (5 * OSC_WAVEFORM_VERTICAL_DIVISION_WIDTH))
 #define OSC_WAVEFORM_INNER_X (OSC_WAVEFORM_X + OSC_WAVEFORM_BORDER)
 #define OSC_WAVEFORM_INNER_Y (OSC_WAVEFORM_Y + OSC_WAVEFORM_BORDER)
 #define OSC_WAVEFORM_INNER_WIDTH (OSC_WAVEFORM_WIDTH - (OSC_WAVEFORM_BORDER * 2))
@@ -123,6 +128,8 @@ typedef struct {
     lv_obj_t *waveform_renderer;
     lv_obj_t *buffer_label;
     lv_obj_t *channel_buttons[4];
+    lv_obj_t *information_titles[4];
+    lv_obj_t *information_values[4];
     lv_obj_t *cursor_lines[2];
     lv_obj_t *cursor_label;
     lv_obj_t *trigger_line;
@@ -601,6 +608,56 @@ static void osc_create_channel_buttons(lv_obj_t *parent)
         lv_label_set_text_fmt(label, "CH%u", (unsigned)(i + 1));
         lv_obj_center(label);
         osc_update_channel_button(i);
+    }
+}
+
+/**
+ * @brief Cria os quatro painéis transparentes de informações da operação.
+ *
+ * Os painéis são apenas visuais e ocupam o lado direito da área da waveform.
+ * Seus valores serão atualizados posteriormente pela lógica do processo.
+ *
+ * @param[in] parent Tela principal.
+ */
+static void osc_create_information_panels(lv_obj_t *parent)
+{
+    static const char *const titles[] = {
+        "Pressao",
+        "Tempo\nRestante",
+        "Ciclo",
+        "Etapa",
+    };
+
+    for (uint8_t i = 0; i < 4; i++) {
+        lv_obj_t *panel = lv_obj_create(parent);
+        lv_obj_remove_style_all(panel);
+        lv_obj_set_size(panel, OSC_INFORMATION_PANEL_CONTENT_WIDTH, OSC_CHANNEL_BUTTON_HEIGHT);
+        lv_obj_set_pos(panel,
+                       OSC_INFORMATION_PANEL_X + OSC_CHANNEL_BUTTON_GAP + 2,
+                       OSC_WAVEFORM_Y + OSC_CHANNEL_BUTTON_GAP + OSC_CHANNEL_BUTTON_Y_OFFSET +
+                           (i * (OSC_CHANNEL_BUTTON_HEIGHT + OSC_CHANNEL_BUTTON_GAP)));
+        lv_obj_set_style_bg_opa(panel, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(panel, 1, LV_PART_MAIN);
+        lv_obj_set_style_border_color(panel, lv_color_hex(0xffffff), LV_PART_MAIN);
+        lv_obj_set_style_border_opa(panel, LV_OPA_50, LV_PART_MAIN);
+        lv_obj_set_style_radius(panel, 7, LV_PART_MAIN);
+        lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *title = lv_label_create(panel);
+        s_lvgl.information_titles[i] = title;
+        lv_label_set_text(title, titles[i]);
+        lv_label_set_long_mode(title, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(title, OSC_INFORMATION_PANEL_CONTENT_WIDTH - 8);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_14, LV_PART_MAIN);
+        lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), LV_PART_MAIN);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 8);
+
+        lv_obj_t *value = lv_label_create(panel);
+        s_lvgl.information_values[i] = value;
+        lv_label_set_text(value, "--");
+        lv_obj_set_style_text_font(value, &lv_font_montserrat_14, LV_PART_MAIN);
+        lv_obj_set_style_text_color(value, lv_color_hex(0xffffff), LV_PART_MAIN);
+        lv_obj_align(value, LV_ALIGN_BOTTOM_MID, 0, -10);
     }
 }
 
@@ -1157,7 +1214,7 @@ static void osc_waveform_draw_event_cb(lv_event_t *event)
     }
     for (int32_t vertical_index = 1; vertical_index < 10; vertical_index++) {
         if (vertical_index != 5) {
-            const int32_t x = OSC_WAVEFORM_INNER_X + (vertical_index * 70);
+            const int32_t x = OSC_WAVEFORM_X + (vertical_index * OSC_WAVEFORM_VERTICAL_DIVISION_WIDTH);
             for (int32_t y = OSC_WAVEFORM_INNER_Y; y < OSC_WAVEFORM_INNER_Y + OSC_WAVEFORM_INNER_HEIGHT; y += 8) {
                 osc_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, x, y, dot);
             }
@@ -1167,7 +1224,7 @@ static void osc_waveform_draw_event_cb(lv_event_t *event)
         osc_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, x, OSC_WAVEFORM_INNER_Y + (OSC_WAVEFORM_INNER_HEIGHT / 2), center);
     }
     for (int32_t y = OSC_WAVEFORM_INNER_Y; y < OSC_WAVEFORM_INNER_Y + OSC_WAVEFORM_INNER_HEIGHT; y += 4) {
-        osc_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, OSC_WAVEFORM_INNER_X + (OSC_WAVEFORM_INNER_WIDTH / 2), y, center);
+        osc_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, OSC_WAVEFORM_CENTER_X, y, center);
     }
 
     const uint32_t visible_samples = osc_waveform_visible_samples();
@@ -1479,6 +1536,7 @@ esp_err_t osc_create(wt32s3_lcd_handle_t lcd)
 
     osc_create_top_menu(s_lvgl.screen);
     osc_create_channel_buttons(s_lvgl.screen);
+    osc_create_information_panels(s_lvgl.screen);
     osc_create_waveform_area(s_lvgl.screen);
     osc_create_measurements(s_lvgl.screen);
     for (uint8_t i = 0; i < 4; i++) {
