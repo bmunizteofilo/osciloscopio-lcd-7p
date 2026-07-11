@@ -1,0 +1,5 @@
+# Artefatos de build e ambientes locais
+/build/
+/.vscode/
+/.agents/
+/managed_components/
