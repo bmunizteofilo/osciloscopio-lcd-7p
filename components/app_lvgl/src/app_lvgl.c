@@ -1,202 +1,54 @@
 #include "app_lvgl.h"
-#include <stdbool.h>
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+
 #include "esp_attr.h"
 #include "esp_check.h"
-#include "esp_heap_caps.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_rgb.h"
-#include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
-#include "draw/lv_draw.h"
+#include "osc.h"
 
+/** @brief Periodo do tick entregue ao LVGL, em milissegundos. */
 #define APP_LVGL_TICK_PERIOD_MS 1
+/** @brief Tamanho da pilha da task responsavel pelo processamento LVGL. */
 #define APP_LVGL_TASK_STACK_SIZE 8192
+/** @brief Prioridade da task de processamento LVGL. */
 #define APP_LVGL_TASK_PRIORITY 4
+/** @brief Intervalo entre chamadas do manipulador LVGL. */
 #define APP_LVGL_TASK_DELAY_MS 5
-#define APP_LVGL_SCREEN_WIDTH WT32S3_LCD_H_RES
-#define APP_LVGL_SCREEN_HEIGHT WT32S3_LCD_V_RES
-#define APP_LVGL_MENU_HEIGHT 56
-#define APP_LVGL_MENU_LABEL_HEIGHT 16
-#define APP_LVGL_MENU_DROPDOWN_HEIGHT 36
-#define APP_LVGL_MENU_ITEM_WIDTH 118
-#define APP_LVGL_WAVEFORM_Y 58
-#define APP_LVGL_WAVEFORM_HEIGHT 368
-#define APP_LVGL_WAVEFORM_BORDER 2
-#define APP_LVGL_CHANNEL_BUTTON_PANEL_WIDTH 100
-#define APP_LVGL_CHANNEL_BUTTON_GAP 4
-#define APP_LVGL_CHANNEL_BUTTON_Y_OFFSET 3
-#define APP_LVGL_CHANNEL_BUTTON_WIDTH 92
-#define APP_LVGL_CHANNEL_BUTTON_HEIGHT 86
-#define APP_LVGL_WAVEFORM_X APP_LVGL_CHANNEL_BUTTON_PANEL_WIDTH
-#define APP_LVGL_WAVEFORM_WIDTH (APP_LVGL_SCREEN_WIDTH - APP_LVGL_WAVEFORM_X)
-#define APP_LVGL_WAVEFORM_INNER_X (APP_LVGL_WAVEFORM_X + APP_LVGL_WAVEFORM_BORDER)
-#define APP_LVGL_WAVEFORM_INNER_Y (APP_LVGL_WAVEFORM_Y + APP_LVGL_WAVEFORM_BORDER)
-#define APP_LVGL_WAVEFORM_INNER_WIDTH (APP_LVGL_WAVEFORM_WIDTH - (APP_LVGL_WAVEFORM_BORDER * 2))
-#define APP_LVGL_WAVEFORM_INNER_HEIGHT (APP_LVGL_WAVEFORM_HEIGHT - (APP_LVGL_WAVEFORM_BORDER * 2))
-#define APP_LVGL_MEASUREMENTS_Y 430
-#define APP_LVGL_CHANNEL_ROW_HEIGHT 25
-#define APP_LVGL_CHANNEL_INFO_GAP 4
-#define APP_LVGL_CHANNEL_INFO_WIDTH ((APP_LVGL_SCREEN_WIDTH - APP_LVGL_CHANNEL_INFO_GAP) / 2)
-#define APP_LVGL_CHART_POINT_COUNT APP_LVGL_WAVEFORM_INNER_WIDTH
-#define APP_LVGL_CHART_TIMER_MS 20
-#define APP_LVGL_HISTORY_BYTES_PER_CHANNEL (500U * 1024U)
-#define APP_LVGL_HISTORY_SAMPLE_COUNT (APP_LVGL_HISTORY_BYTES_PER_CHANNEL / sizeof(uint16_t))
-#define APP_LVGL_SIM_SAMPLE_RATE_HZ 20000U
-#define APP_LVGL_HEAP_LOG_PERIOD_MS 5000
-#define APP_LVGL_ADC_CENTER 1024
-#define APP_LVGL_ADC_DIV_VALUE 256
-#define APP_LVGL_CH1_LOW (APP_LVGL_ADC_CENTER - (2 * APP_LVGL_ADC_DIV_VALUE))
-#define APP_LVGL_CH1_HIGH (APP_LVGL_ADC_CENTER + (2 * APP_LVGL_ADC_DIV_VALUE))
-#define APP_LVGL_CH2_LOW (APP_LVGL_ADC_CENTER - APP_LVGL_ADC_DIV_VALUE)
-#define APP_LVGL_CH2_HIGH (APP_LVGL_ADC_CENTER + (3 * APP_LVGL_ADC_DIV_VALUE))
-#define APP_LVGL_CH3_OFFSET APP_LVGL_ADC_DIV_VALUE
-#define APP_LVGL_CH4_OFFSET (APP_LVGL_ADC_DIV_VALUE * 2)
-#define APP_LVGL_PHASE_OFFSET_US (APP_LVGL_SQUARE_PERIOD_US / 12)
-#define APP_LVGL_SQUARE_PERIOD_US 200000
-#define APP_LVGL_DEFAULT_TIME_BASE_US_PER_DIV 100000
-#define APP_LVGL_DEFAULT_VOLTAGE_BASE_MV_PER_DIV 50
-#define APP_LVGL_TIME_DIV_COUNT 10
-#define APP_LVGL_VOLTAGE_DIV_COUNT 8
-#define APP_LVGL_BACKLIGHT_DEFAULT_PERCENT 80
-#define APP_LVGL_BACKLIGHT_MIN_PERCENT 10
-#define APP_LVGL_BACKLIGHT_MAX_PERCENT 100
-#define APP_LVGL_BACKLIGHT_SLIDER_WIDTH 36
-#define APP_LVGL_BACKLIGHT_SLIDER_HEIGHT ((APP_LVGL_WAVEFORM_INNER_HEIGHT * 60) / 100)
-#define APP_LVGL_TRIGGER_HIDE_MS 5000
-#define APP_LVGL_TRIGGER_MARKER_WIDTH 5
 
-typedef enum {
-    APP_LVGL_CURSOR_MODE_OFF = 0,
-    APP_LVGL_CURSOR_MODE_TIME,
-    APP_LVGL_CURSOR_MODE_VOLTAGE,
-} app_lvgl_cursor_mode_t;
-
-typedef enum {
-    APP_LVGL_THEME_DARK = 0,
-    APP_LVGL_THEME_LIGHT,
-} app_lvgl_theme_t;
-
-#define APP_LVGL_MONITOR_HEAP_LOG 0
-
-static const char *TAG = "app_lvgl";
-
-static const uint32_t APP_LVGL_CHANNEL_COLORS[] = {
-    0x00c853, /* CH1 verde */
-    0xffd600, /* CH2 amarelo */
-    0xff1744, /* CH3 vermelho */
-    0x2979ff, /* CH4 azul */
-};
-
-static const int32_t APP_LVGL_MEASUREMENT_X[] = {
-    8,
-    130,
-    250,
-    385,
-    530,
-};
-
-static const uint32_t APP_LVGL_TIME_BASE_US_PER_DIV[] = {
-    1000,
-    2000,
-    5000,
-    10000,
-    20000,
-    50000,
-    100000,
-    250000,
-    500000,
-    1000000,
-};
-
-static const uint32_t APP_LVGL_VOLTAGE_BASE_MV_PER_DIV[] = {
-    50,
-    100,
-    200,
-    500,
-    1000,
-    2000,
-    5000,
-    10000,
-};
-
+/** @brief Recursos de infraestrutura usados pela porta LVGL. */
 typedef struct {
     wt32s3_lcd_handle_t lcd;
     gt911_touch_handle_t touch;
     lv_display_t *display;
     lv_indev_t *input;
-    lv_obj_t *screen;
-    lv_obj_t *waveform_renderer;
-    lv_obj_t *buffer_label;
-    lv_obj_t *channel_buttons[4];
-    lv_obj_t *cursor_lines[2];
-    lv_obj_t *cursor_label;
-    lv_obj_t *trigger_line;
-    lv_obj_t *trigger_marker;
-    lv_timer_t *trigger_hide_timer;
-    lv_obj_t *backlight_slider;
-    lv_obj_t *backlight_label;
-    lv_obj_t *measurement_labels[4][5];
-    bool channel_visible[4];
-    app_lvgl_cursor_mode_t cursor_mode;
-    app_lvgl_theme_t theme;
-    bool paused;
-    bool trigger_enabled;
-    bool trigger_rising;
-    bool trigger_single_captured;
-    uint8_t trigger_mode;
-    uint8_t trigger_channel;
-    uint32_t trigger_single_first_sample;
-    uint8_t backlight_percent;
-    uint32_t time_base_us_per_div;
-    uint32_t voltage_base_mv_per_div;
-    uint32_t square_phase_us;
-    uint16_t *waveform_samples[4];
-    uint32_t waveform_sample_count;
-    uint32_t waveform_sample_head;
-    uint32_t history_view_offset;
-    int32_t history_drag_last_x;
-    bool history_navigation_started;
-    uint32_t last_plot_first_sample;
-    uint32_t last_plot_sample_count;
-    bool last_plot_triggered;
     SemaphoreHandle_t lock;
     TaskHandle_t task;
 } app_lvgl_context_t;
 
+/** @brief Contexto único da infraestrutura LVGL. */
 static app_lvgl_context_t s_lvgl = {0};
-static uint16_t s_waveform_y_lookup[(APP_LVGL_ADC_CENTER * 2) + 1];
 
-/**
- * @brief Bloqueia o acesso as APIs do LVGL.
- */
+/** @brief Obtém exclusividade para chamadas à API LVGL. */
 static void app_lvgl_lock(void)
 {
-    if (s_lvgl.lock != NULL) {
-        xSemaphoreTake(s_lvgl.lock, portMAX_DELAY);
-    }
+    xSemaphoreTake(s_lvgl.lock, portMAX_DELAY);
 }
 
-/**
- * @brief Libera o acesso as APIs do LVGL.
- */
+/** @brief Libera a exclusividade das chamadas à API LVGL. */
 static void app_lvgl_unlock(void)
 {
-    if (s_lvgl.lock != NULL) {
-        xSemaphoreGive(s_lvgl.lock);
-    }
+    xSemaphoreGive(s_lvgl.lock);
 }
 
 /**
- * @brief Atualiza o contador interno de tempo do LVGL.
+ * @brief Avança a base de tempo interna do LVGL.
  *
- * @param[in] arg Argumento nao utilizado.
+ * @param[in] arg Contexto não utilizado pelo temporizador ESP.
  */
 static void app_lvgl_tick_cb(void *arg)
 {
@@ -204,38 +56,18 @@ static void app_lvgl_tick_cb(void *arg)
     lv_tick_inc(APP_LVGL_TICK_PERIOD_MS);
 }
 
-#if APP_LVGL_MONITOR_HEAP_LOG == 1
 /**
- * @brief Registra periodicamente o uso de heap interno e PSRAM.
+ * @brief Notifica a task LVGL que o painel RGB liberou o framebuffer.
  *
- * @param[in] arg Argumento nao utilizado.
+ * @return true quando uma task de maior prioridade foi acordada.
  */
-static void app_lvgl_heap_log_cb(void *arg)
-{
-    (void)arg;
-
-    ESP_LOGI(TAG,
-             "heap interno livre=%u maior_bloco=%u | psram livre=%u maior_bloco=%u",
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
-}
-#endif
-/**
- * @brief Notifica a task do LVGL quando o driver RGB termina de usar o framebuffer.
- *
- * @param[in] panel Handle nativo do painel RGB.
- * @param[in] edata Dados do evento, nao usados nesta porta.
- * @param[in] user_ctx Ponteiro nao utilizado.
- * @return true se uma task de maior prioridade foi acordada.
- */
-static bool IRAM_ATTR app_lvgl_frame_complete_cb(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx)
+static bool IRAM_ATTR app_lvgl_frame_complete_cb(esp_lcd_panel_handle_t panel,
+                                                  const esp_lcd_rgb_panel_event_data_t *edata,
+                                                  void *user_ctx)
 {
     (void)panel;
     (void)edata;
     (void)user_ctx;
-
     BaseType_t higher_priority_task_woken = pdFALSE;
     if (s_lvgl.task != NULL) {
         vTaskNotifyGiveFromISR(s_lvgl.task, &higher_priority_task_woken);
@@ -244,32 +76,21 @@ static bool IRAM_ATTR app_lvgl_frame_complete_cb(esp_lcd_panel_handle_t panel, c
 }
 
 /**
- * @brief Envia o framebuffer renderizado pelo LVGL para o painel RGB.
- *
- * @param[in] display Display LVGL que solicitou o flush.
- * @param[in] area Area de pixels a atualizar.
- * @param[in] px_map Buffer RGB565 renderizado pelo LVGL.
+ * @brief Entrega ao painel RGB o último framebuffer renderizado pelo LVGL.
  */
 static void app_lvgl_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
 {
-    (void)area;
-
     wt32s3_lcd_handle_t lcd = (wt32s3_lcd_handle_t)lv_display_get_user_data(display);
-    esp_lcd_panel_handle_t panel = wt32s3_lcd_get_panel(lcd);
-
     if (!lv_display_flush_is_last(display)) {
         lv_display_flush_ready(display);
         return;
     }
-
     ulTaskNotifyTake(pdTRUE, 0);
-    esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+    esp_lcd_panel_draw_bitmap(wt32s3_lcd_get_panel(lcd), area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
 }
 
 /**
- * @brief Aguarda o driver RGB liberar o framebuffer atual antes do proximo desenho.
- *
- * @param[in] display Display LVGL associado ao painel RGB.
+ * @brief Aguarda o painel RGB terminar o uso do framebuffer antes do próximo desenho.
  */
 static void app_lvgl_flush_wait_cb(lv_display_t *display)
 {
@@ -280,16 +101,12 @@ static void app_lvgl_flush_wait_cb(lv_display_t *display)
 }
 
 /**
- * @brief Le o estado atual do GT911 e entrega ao LVGL.
- *
- * @param[in] input Dispositivo de entrada LVGL.
- * @param[out] data Estrutura preenchida com o estado do toque.
+ * @brief Lê o GT911 e converte seu estado para a entrada de ponteiro LVGL.
  */
 static void app_lvgl_touch_read_cb(lv_indev_t *input, lv_indev_data_t *data)
 {
-    gt911_touch_handle_t touch = (gt911_touch_handle_t)lv_indev_get_user_data(input);
     gt911_touch_data_t touch_data = {0};
-
+    gt911_touch_handle_t touch = (gt911_touch_handle_t)lv_indev_get_user_data(input);
     if (gt911_touch_read(touch, &touch_data) == ESP_OK && touch_data.touched && touch_data.points > 0) {
         data->state = LV_INDEV_STATE_PRESSED;
         data->point.x = touch_data.x[0];
@@ -299,1392 +116,12 @@ static void app_lvgl_touch_read_cb(lv_indev_t *input, lv_indev_data_t *data)
     }
 }
 
-static void app_lvgl_update_cursor_label(void);
-static void app_lvgl_reset_cursor_positions(void);
-static void app_lvgl_waveform_reset(void);
-static void app_lvgl_update_buffer_label(void);
-static void app_lvgl_trigger_edge_event_cb(lv_event_t *event);
-static void app_lvgl_trigger_channel_event_cb(lv_event_t *event);
-static void app_lvgl_clear_measurements(uint8_t channel);
-
-static uint32_t app_lvgl_theme_waveform_bg(void)
-{
-    return s_lvgl.theme == APP_LVGL_THEME_LIGHT ? 0xffffff : 0x000000;
-}
-
-static uint32_t app_lvgl_theme_grid_dot(void)
-{
-    return s_lvgl.theme == APP_LVGL_THEME_LIGHT ? 0x404040 : 0x606060;
-}
-
-static uint32_t app_lvgl_theme_grid_center(void)
-{
-    return s_lvgl.theme == APP_LVGL_THEME_LIGHT ? 0x000000 : 0xffffff;
-}
-
-static uint32_t app_lvgl_theme_overlay_text(void)
-{
-    return s_lvgl.theme == APP_LVGL_THEME_LIGHT ? 0x000000 : 0xffffff;
-}
-
-static void app_lvgl_apply_theme(void)
-{
-    if (s_lvgl.waveform_renderer != NULL) {
-        lv_obj_invalidate(s_lvgl.waveform_renderer);
-    }
-
-    for (uint8_t i = 0; i < 2; i++) {
-        if (s_lvgl.cursor_lines[i] != NULL) {
-            lv_obj_set_style_bg_color(s_lvgl.cursor_lines[i], lv_color_hex(app_lvgl_theme_overlay_text()), LV_PART_MAIN);
-        }
-    }
-
-    if (s_lvgl.cursor_label != NULL) {
-        lv_obj_set_style_text_color(s_lvgl.cursor_label, lv_color_hex(app_lvgl_theme_overlay_text()), LV_PART_MAIN);
-    }
-    if (s_lvgl.backlight_label != NULL) {
-        lv_obj_set_style_text_color(s_lvgl.backlight_label, lv_color_hex(app_lvgl_theme_overlay_text()), LV_PART_MAIN);
-    }
-    if (s_lvgl.buffer_label != NULL) {
-        lv_obj_set_style_text_color(s_lvgl.buffer_label, lv_color_hex(app_lvgl_theme_overlay_text()), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(s_lvgl.buffer_label, lv_color_hex(app_lvgl_theme_waveform_bg()), LV_PART_MAIN);
-    }
-}
-
 /**
- * @brief Atualiza a base de tempo usada pelo sinal simulado.
- *
- * @param[in] event Evento LVGL do dropdown de base de tempo.
- */
-static void app_lvgl_time_base_event_cb(lv_event_t *event)
-{
-    lv_obj_t *dropdown = lv_event_get_target_obj(event);
-    const uint32_t selected = lv_dropdown_get_selected(dropdown);
-
-    if (selected < (sizeof(APP_LVGL_TIME_BASE_US_PER_DIV) / sizeof(APP_LVGL_TIME_BASE_US_PER_DIV[0]))) {
-        s_lvgl.time_base_us_per_div = APP_LVGL_TIME_BASE_US_PER_DIV[selected];
-        if (s_lvgl.waveform_renderer != NULL) {
-            lv_obj_invalidate(s_lvgl.waveform_renderer);
-        }
-        app_lvgl_update_cursor_label();
-    }
-}
-
-/**
- * @brief Atualiza a base de tensao usada pelos cursores horizontais.
- *
- * @param[in] event Evento LVGL do dropdown de base de tensao.
- */
-static void app_lvgl_voltage_base_event_cb(lv_event_t *event)
-{
-    lv_obj_t *dropdown = lv_event_get_target_obj(event);
-    const uint32_t selected = lv_dropdown_get_selected(dropdown);
-
-    if (selected < (sizeof(APP_LVGL_VOLTAGE_BASE_MV_PER_DIV) / sizeof(APP_LVGL_VOLTAGE_BASE_MV_PER_DIV[0]))) {
-        s_lvgl.voltage_base_mv_per_div = APP_LVGL_VOLTAGE_BASE_MV_PER_DIV[selected];
-        app_lvgl_update_cursor_label();
-    }
-}
-
-/**
- * @brief Atualiza o modo dos cursores.
- *
- * @param[in] event Evento LVGL do dropdown de cursores.
- */
-static void app_lvgl_cursor_mode_event_cb(lv_event_t *event)
-{
-    lv_obj_t *dropdown = lv_event_get_target_obj(event);
-    const uint32_t selected = lv_dropdown_get_selected(dropdown);
-
-    if (selected <= APP_LVGL_CURSOR_MODE_VOLTAGE) {
-        s_lvgl.cursor_mode = (app_lvgl_cursor_mode_t)selected;
-        app_lvgl_reset_cursor_positions();
-        app_lvgl_update_cursor_label();
-    }
-}
-
-/**
- * @brief Atualiza o estado de execucao do sinal.
- *
- * @param[in] event Evento LVGL do dropdown Run/Pause.
- */
-static void app_lvgl_run_pause_event_cb(lv_event_t *event)
-{
-    lv_obj_t *dropdown = lv_event_get_target_obj(event);
-    const uint32_t selected = lv_dropdown_get_selected(dropdown);
-
-    s_lvgl.paused = selected == 1;
-    s_lvgl.history_view_offset = 0;
-    s_lvgl.history_navigation_started = false;
-    app_lvgl_update_buffer_label();
-    if (!s_lvgl.paused) {
-        s_lvgl.cursor_mode = APP_LVGL_CURSOR_MODE_OFF;
-    }
-    app_lvgl_update_cursor_label();
-}
-
-/**
- * @brief Esconde visualmente a linha de trigger mantendo a area de toque ativa.
- *
- * @param[in] timer Timer LVGL do auto-hide.
- */
-static void app_lvgl_trigger_hide_timer_cb(lv_timer_t *timer)
-{
-    (void)timer;
-    if (s_lvgl.trigger_line != NULL && s_lvgl.trigger_enabled) {
-        lv_obj_set_style_bg_opa(s_lvgl.trigger_line, LV_OPA_TRANSP, LV_PART_MAIN);
-        if (s_lvgl.trigger_marker != NULL) {
-            lv_obj_set_y(s_lvgl.trigger_marker, lv_obj_get_y(s_lvgl.trigger_line));
-            lv_obj_clear_flag(s_lvgl.trigger_marker, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_move_foreground(s_lvgl.trigger_marker);
-        }
-    }
-    if (s_lvgl.trigger_hide_timer != NULL) {
-        lv_timer_pause(s_lvgl.trigger_hide_timer);
-    }
-}
-
-/**
- * @brief Mostra a linha de trigger e reinicia o timer de auto-hide.
- */
-static void app_lvgl_show_trigger_line(void)
-{
-    if (s_lvgl.trigger_line == NULL || !s_lvgl.trigger_enabled) {
-        return;
-    }
-
-    lv_obj_set_style_bg_opa(s_lvgl.trigger_line, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_move_foreground(s_lvgl.trigger_line);
-    if (s_lvgl.trigger_marker != NULL) {
-        lv_obj_add_flag(s_lvgl.trigger_marker, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (s_lvgl.trigger_hide_timer != NULL) {
-        lv_timer_reset(s_lvgl.trigger_hide_timer);
-        lv_timer_resume(s_lvgl.trigger_hide_timer);
-    }
-}
-
-/**
- * @brief Move a linha de trigger pelo toque.
- *
- * @param[in] event Evento LVGL da linha de trigger.
- */
-static void app_lvgl_trigger_line_event_cb(lv_event_t *event)
-{
-    (void)event;
-    if (!s_lvgl.trigger_enabled || s_lvgl.trigger_line == NULL) {
-        return;
-    }
-
-    lv_indev_t *indev = lv_indev_get_act();
-    if (indev == NULL) {
-        return;
-    }
-
-    lv_point_t point = {0};
-    lv_indev_get_point(indev, &point);
-
-    int32_t y = point.y;
-    if (y < APP_LVGL_WAVEFORM_INNER_Y) {
-        y = APP_LVGL_WAVEFORM_INNER_Y;
-    } else if (y > APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT - 2) {
-        y = APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT - 2;
-    }
-    lv_obj_set_y(s_lvgl.trigger_line, y);
-    s_lvgl.trigger_single_captured = false;
-    app_lvgl_show_trigger_line();
-    lv_obj_invalidate(s_lvgl.waveform_renderer);
-}
-
-/**
- * @brief Atualiza a habilitacao visual do nivel de trigger.
- *
- * @param[in] event Evento LVGL do dropdown Trigger.
- */
-static void app_lvgl_trigger_event_cb(lv_event_t *event)
-{
-    lv_obj_t *dropdown = lv_event_get_target_obj(event);
-    s_lvgl.trigger_mode = (uint8_t)lv_dropdown_get_selected(dropdown);
-    s_lvgl.trigger_enabled = s_lvgl.trigger_mode != 0;
-    s_lvgl.trigger_single_captured = false;
-
-    if (s_lvgl.trigger_line == NULL) {
-        return;
-    }
-
-    if (s_lvgl.trigger_enabled) {
-        app_lvgl_show_trigger_line();
-    } else {
-        lv_obj_set_style_bg_opa(s_lvgl.trigger_line, LV_OPA_TRANSP, LV_PART_MAIN);
-        if (s_lvgl.trigger_marker != NULL) {
-            lv_obj_add_flag(s_lvgl.trigger_marker, LV_OBJ_FLAG_HIDDEN);
-        }
-        if (s_lvgl.trigger_hide_timer != NULL) {
-            lv_timer_pause(s_lvgl.trigger_hide_timer);
-        }
-    }
-    if (s_lvgl.waveform_renderer != NULL) {
-        lv_obj_invalidate(s_lvgl.waveform_renderer);
-    }
-}
-
-/**
- * @brief Atualiza o label e o PWM do backlight.
- */
-static void app_lvgl_update_backlight_value(void)
-{
-    if (s_lvgl.backlight_label != NULL) {
-        lv_label_set_text_fmt(s_lvgl.backlight_label, "%u%%", (unsigned)s_lvgl.backlight_percent);
-    }
-
-    if (s_lvgl.lcd != NULL) {
-        esp_err_t err = wt32s3_lcd_set_backlight(s_lvgl.lcd, s_lvgl.backlight_percent);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "falha ao ajustar brilho: %s", esp_err_to_name(err));
-        }
-    }
-}
-
-/**
- * @brief Processa alteracoes no slider de brilho.
- *
- * @param[in] event Evento LVGL do slider.
- */
-static void app_lvgl_backlight_slider_event_cb(lv_event_t *event)
-{
-    lv_obj_t *slider = lv_event_get_target_obj(event);
-    s_lvgl.backlight_percent = (uint8_t)lv_slider_get_value(slider);
-    app_lvgl_update_backlight_value();
-}
-
-/**
- * @brief Mostra ou esconde o controle de brilho.
- *
- * @param[in] event Evento LVGL do dropdown Brilho.
- */
-static void app_lvgl_backlight_dropdown_event_cb(lv_event_t *event)
-{
-    lv_obj_t *dropdown = lv_event_get_target_obj(event);
-    const bool show = lv_dropdown_get_selected(dropdown) == 0;
-
-    if (s_lvgl.backlight_slider == NULL || s_lvgl.backlight_label == NULL) {
-        return;
-    }
-
-    if (show) {
-        lv_obj_clear_flag(s_lvgl.backlight_slider, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(s_lvgl.backlight_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_move_foreground(s_lvgl.backlight_slider);
-        lv_obj_move_foreground(s_lvgl.backlight_label);
-    } else {
-        lv_obj_add_flag(s_lvgl.backlight_slider, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s_lvgl.backlight_label, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-/**
- * @brief Alterna o tema visual da waveform.
- *
- * @param[in] event Evento LVGL do dropdown Tema.
- */
-static void app_lvgl_theme_event_cb(lv_event_t *event)
-{
-    lv_obj_t *dropdown = lv_event_get_target_obj(event);
-    const uint32_t selected = lv_dropdown_get_selected(dropdown);
-
-    s_lvgl.theme = selected == 1 ? APP_LVGL_THEME_LIGHT : APP_LVGL_THEME_DARK;
-    app_lvgl_apply_theme();
-}
-
-/**
- * @brief Cria um item do menu superior com label e dropdown.
- *
- * @param[in] parent Objeto pai rolavel.
- * @param[in] title Titulo exibido acima do dropdown.
- * @param[in] options Opcoes do dropdown separadas por '\n'.
- * @param[in] selected Opcao selecionada inicialmente.
- * @param[in] color Cor de fundo do controle.
- * @param[in] event_cb Callback opcional de alteracao.
- */
-static lv_obj_t *app_lvgl_create_menu_item(lv_obj_t *parent, const char *title, const char *options, uint16_t selected, uint32_t color, lv_event_cb_t event_cb)
-{
-    lv_obj_t *item = lv_obj_create(parent);
-    lv_obj_remove_style_all(item);
-    lv_obj_set_size(item, APP_LVGL_MENU_ITEM_WIDTH, APP_LVGL_MENU_HEIGHT);
-    lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *label = lv_label_create(item);
-    lv_label_set_text(label, title);
-    lv_obj_set_size(label, APP_LVGL_MENU_ITEM_WIDTH, APP_LVGL_MENU_LABEL_HEIGHT);
-    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 0);
-
-    lv_obj_t *dropdown = lv_dropdown_create(item);
-    lv_obj_set_size(dropdown, APP_LVGL_MENU_ITEM_WIDTH, APP_LVGL_MENU_DROPDOWN_HEIGHT);
-    lv_obj_set_pos(dropdown, 0, APP_LVGL_MENU_LABEL_HEIGHT + 1);
-    lv_dropdown_set_options(dropdown, options);
-    lv_dropdown_set_selected(dropdown, selected);
-    lv_obj_set_style_bg_color(dropdown, lv_color_hex(color), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(dropdown, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(dropdown, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(dropdown, lv_color_hex(0xffffff), LV_PART_MAIN);
-    lv_obj_set_style_radius(dropdown, 5, LV_PART_MAIN);
-    lv_obj_set_style_text_color(dropdown, lv_color_hex(0xffffff), LV_PART_MAIN);
-    lv_obj_set_style_pad_top(dropdown, 7, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(dropdown, 0, LV_PART_MAIN);
-    if (event_cb != NULL) {
-        lv_obj_add_event_cb(dropdown, event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    }
-    return item;
-}
-
-/**
- * @brief Cria o menu superior horizontal e rolavel.
- *
- * @param[in] parent Tela principal.
- */
-static void app_lvgl_create_top_menu(lv_obj_t *parent)
-{
-    lv_obj_t *menu = lv_obj_create(parent);
-    lv_obj_remove_style_all(menu);
-    lv_obj_set_size(menu, APP_LVGL_SCREEN_WIDTH, APP_LVGL_MENU_HEIGHT);
-    lv_obj_set_pos(menu, 0, 0);
-    lv_obj_set_flex_flow(menu, LV_FLEX_FLOW_ROW);
-    lv_obj_set_scroll_dir(menu, LV_DIR_HOR);
-    lv_obj_set_scrollbar_mode(menu, LV_SCROLLBAR_MODE_ACTIVE);
-    lv_obj_set_style_pad_all(menu, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_column(menu, 4, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(menu, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(menu, LV_OPA_COVER, LV_PART_MAIN);
-
-    app_lvgl_create_menu_item(menu, "Run", "Run\nPause", 0, 0xc62828, app_lvgl_run_pause_event_cb);
-    app_lvgl_create_menu_item(menu, "Tempo", "1ms\n2ms\n5ms\n10ms\n20ms\n50ms\n100ms\n250ms\n500ms\n1s", 6, 0x455a64, app_lvgl_time_base_event_cb);
-    app_lvgl_create_menu_item(menu, "Tensao", "50mV\n100mV\n200mV\n500mV\n1V\n2V\n5V\n10V", 0, 0x5d4037, app_lvgl_voltage_base_event_cb);
-    app_lvgl_create_menu_item(menu, "Trigger", "Off\nNormal\nAuto\nSingle", 0, 0x6a1b9a, app_lvgl_trigger_event_cb);
-    app_lvgl_create_menu_item(menu, "Borda", "Rising\nFalling", 0, 0x00838f, app_lvgl_trigger_edge_event_cb);
-    app_lvgl_create_menu_item(menu, "Trig CH", "CH1\nCH2\nCH3\nCH4", 0, 0x2e7d32, app_lvgl_trigger_channel_event_cb);
-    app_lvgl_create_menu_item(menu, "Cursores", "Off\nTempo\nTensao", 0, 0x37474f, app_lvgl_cursor_mode_event_cb);
-    app_lvgl_create_menu_item(menu, "Brilho", "On\nOff", 1, 0x546e7a, app_lvgl_backlight_dropdown_event_cb);
-    app_lvgl_create_menu_item(menu, "Tema", "Escuro\nClaro", 0, 0x263238, app_lvgl_theme_event_cb);
-}
-
-/**
- * @brief Gera o estado da onda quadrada e avanca o tempo do sinal.
- *
- * @param[in] elapsed_us Tempo simulado desde a ultima amostra.
- * @return true para nivel alto, false para nivel baixo.
- */
-static bool app_lvgl_next_square_state(uint32_t elapsed_us)
-{
-    const uint32_t half_period_us = APP_LVGL_SQUARE_PERIOD_US / 2;
-    const uint32_t phase = (s_lvgl.square_phase_us / half_period_us) % 2;
-    s_lvgl.square_phase_us = (s_lvgl.square_phase_us + elapsed_us) % APP_LVGL_SQUARE_PERIOD_US;
-    return phase == 0;
-}
-
-/**
- * @brief Atualiza o estilo visual de um botao de canal.
- *
- * @param[in] channel_index Indice do canal, de 0 a 3.
- */
-static void app_lvgl_update_channel_button(uint8_t channel_index)
-{
-    lv_obj_t *button = s_lvgl.channel_buttons[channel_index];
-    if (button == NULL) {
-        return;
-    }
-
-    const bool visible = s_lvgl.channel_visible[channel_index];
-    lv_obj_set_style_bg_color(button,
-                              lv_color_hex(visible ? APP_LVGL_CHANNEL_COLORS[channel_index] : 0x303030),
-                              LV_PART_MAIN);
-    lv_obj_set_style_text_color(button,
-                                lv_color_hex((visible && channel_index == 1) ? 0x000000 : 0xffffff),
-                                LV_PART_MAIN);
-}
-
-/**
- * @brief Alterna a visibilidade do canal selecionado.
- *
- * @param[in] event Evento LVGL do botao.
- */
-static void app_lvgl_channel_button_event_cb(lv_event_t *event)
-{
-    const uint8_t channel_index = (uint8_t)(uintptr_t)lv_event_get_user_data(event);
-    if (channel_index >= 4) {
-        return;
-    }
-
-    s_lvgl.channel_visible[channel_index] = !s_lvgl.channel_visible[channel_index];
-    app_lvgl_update_channel_button(channel_index);
-    if (!s_lvgl.channel_visible[channel_index]) {
-        app_lvgl_clear_measurements(channel_index);
-    }
-    if (s_lvgl.waveform_renderer != NULL) {
-        lv_obj_invalidate(s_lvgl.waveform_renderer);
-    }
-}
-
-/**
- * @brief Cria os botoes laterais de habilitacao dos canais.
- *
- * @param[in] parent Tela principal.
- */
-static void app_lvgl_create_channel_buttons(lv_obj_t *parent)
-{
-    for (uint8_t i = 0; i < 4; i++) {
-        lv_obj_t *button = lv_button_create(parent);
-        s_lvgl.channel_buttons[i] = button;
-        s_lvgl.channel_visible[i] = true;
-        lv_obj_set_size(button, APP_LVGL_CHANNEL_BUTTON_WIDTH, APP_LVGL_CHANNEL_BUTTON_HEIGHT);
-        lv_obj_set_pos(button,
-                       APP_LVGL_CHANNEL_BUTTON_GAP,
-                       APP_LVGL_WAVEFORM_Y + APP_LVGL_CHANNEL_BUTTON_GAP + APP_LVGL_CHANNEL_BUTTON_Y_OFFSET + (i * (APP_LVGL_CHANNEL_BUTTON_HEIGHT + APP_LVGL_CHANNEL_BUTTON_GAP)));
-        lv_obj_set_style_radius(button, 7, LV_PART_MAIN);
-        lv_obj_set_style_border_width(button, 1, LV_PART_MAIN);
-        lv_obj_set_style_border_color(button, lv_color_hex(0xffffff), LV_PART_MAIN);
-        lv_obj_add_event_cb(button, app_lvgl_channel_button_event_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)i);
-
-        lv_obj_t *label = lv_label_create(button);
-        lv_label_set_text_fmt(label, "CH%u", (unsigned)(i + 1));
-        lv_obj_center(label);
-        app_lvgl_update_channel_button(i);
-    }
-}
-
-/**
- * @brief Formata um intervalo de tempo em uma label compacta.
- *
- * @param[in] delta_us Intervalo em microssegundos.
- * @param[out] buffer Buffer de texto.
- * @param[in] buffer_size Tamanho do buffer.
- */
-static void app_lvgl_format_time(uint32_t delta_us, char *buffer, size_t buffer_size)
-{
-    if (delta_us >= 1000000U) {
-        lv_snprintf(buffer, buffer_size, "%.2fs", (double)delta_us / 1000000.0);
-    } else if (delta_us >= 1000U) {
-        lv_snprintf(buffer, buffer_size, "%.2fms", (double)delta_us / 1000.0);
-    } else {
-        lv_snprintf(buffer, buffer_size, "%uus", (unsigned)delta_us);
-    }
-}
-
-/**
- * @brief Formata uma frequencia em uma label compacta.
- *
- * @param[in] delta_us Intervalo usado para calcular a frequencia.
- * @param[out] buffer Buffer de texto.
- * @param[in] buffer_size Tamanho do buffer.
- */
-static void app_lvgl_format_frequency(uint32_t delta_us, char *buffer, size_t buffer_size)
-{
-    if (delta_us == 0) {
-        lv_snprintf(buffer, buffer_size, "--");
-        return;
-    }
-
-    const double freq_hz = 1000000.0 / (double)delta_us;
-    if (freq_hz >= 1000000.0) {
-        lv_snprintf(buffer, buffer_size, "%.1fMHz", freq_hz / 1000000.0);
-    } else if (freq_hz >= 1000.0) {
-        lv_snprintf(buffer, buffer_size, "%.1fKHz", freq_hz / 1000.0);
-    } else {
-        lv_snprintf(buffer, buffer_size, "%.1fHz", freq_hz);
-    }
-}
-
-/**
- * @brief Formata uma tensao em uma label compacta.
- *
- * @param[in] delta_mv Tensao em milivolts.
- * @param[out] buffer Buffer de texto.
- * @param[in] buffer_size Tamanho do buffer.
- */
-static void app_lvgl_format_voltage(uint32_t delta_mv, char *buffer, size_t buffer_size)
-{
-    if (delta_mv >= 1000U) {
-        lv_snprintf(buffer, buffer_size, "%.2fV", (double)delta_mv / 1000.0);
-    } else {
-        lv_snprintf(buffer, buffer_size, "%umV", (unsigned)delta_mv);
-    }
-}
-
-/**
- * @brief Reposiciona os cursores para pontos iniciais adequados ao modo ativo.
- */
-static void app_lvgl_reset_cursor_positions(void)
-{
-    if (s_lvgl.cursor_lines[0] == NULL || s_lvgl.cursor_lines[1] == NULL) {
-        return;
-    }
-
-    if (s_lvgl.cursor_mode == APP_LVGL_CURSOR_MODE_TIME) {
-        lv_obj_set_pos(s_lvgl.cursor_lines[0],
-                       APP_LVGL_WAVEFORM_INNER_X + (APP_LVGL_WAVEFORM_INNER_WIDTH / 3),
-                       APP_LVGL_WAVEFORM_INNER_Y);
-        lv_obj_set_pos(s_lvgl.cursor_lines[1],
-                       APP_LVGL_WAVEFORM_INNER_X + ((APP_LVGL_WAVEFORM_INNER_WIDTH * 2) / 3),
-                       APP_LVGL_WAVEFORM_INNER_Y);
-    } else if (s_lvgl.cursor_mode == APP_LVGL_CURSOR_MODE_VOLTAGE) {
-        lv_obj_set_pos(s_lvgl.cursor_lines[0],
-                       APP_LVGL_WAVEFORM_INNER_X,
-                       APP_LVGL_WAVEFORM_INNER_Y + (APP_LVGL_WAVEFORM_INNER_HEIGHT / 3));
-        lv_obj_set_pos(s_lvgl.cursor_lines[1],
-                       APP_LVGL_WAVEFORM_INNER_X,
-                       APP_LVGL_WAVEFORM_INNER_Y + ((APP_LVGL_WAVEFORM_INNER_HEIGHT * 2) / 3));
-    }
-}
-
-/**
- * @brief Atualiza visibilidade, posicao e texto dos cursores.
- */
-static void app_lvgl_update_cursor_label(void)
-{
-    if (s_lvgl.cursor_lines[0] == NULL || s_lvgl.cursor_lines[1] == NULL || s_lvgl.cursor_label == NULL) {
-        return;
-    }
-
-    const bool time_mode = s_lvgl.paused && s_lvgl.cursor_mode == APP_LVGL_CURSOR_MODE_TIME;
-    const bool voltage_mode = s_lvgl.paused && s_lvgl.cursor_mode == APP_LVGL_CURSOR_MODE_VOLTAGE;
-    const bool visible = time_mode || voltage_mode;
-    for (uint8_t i = 0; i < 2; i++) {
-        if (visible) {
-            lv_obj_clear_flag(s_lvgl.cursor_lines[i], LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(s_lvgl.cursor_lines[i], LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-
-    if (!visible) {
-        lv_obj_add_flag(s_lvgl.cursor_label, LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
-
-    lv_obj_clear_flag(s_lvgl.cursor_label, LV_OBJ_FLAG_HIDDEN);
-    if (time_mode) {
-        for (uint8_t i = 0; i < 2; i++) {
-            lv_obj_set_size(s_lvgl.cursor_lines[i], 2, APP_LVGL_WAVEFORM_INNER_HEIGHT);
-            lv_obj_set_y(s_lvgl.cursor_lines[i], APP_LVGL_WAVEFORM_INNER_Y);
-        }
-
-        const int32_t x0 = lv_obj_get_x(s_lvgl.cursor_lines[0]) - APP_LVGL_WAVEFORM_INNER_X;
-        const int32_t x1 = lv_obj_get_x(s_lvgl.cursor_lines[1]) - APP_LVGL_WAVEFORM_INNER_X;
-        const uint32_t dx = (uint32_t)LV_ABS(x1 - x0);
-        const uint32_t delta_us = (dx * s_lvgl.time_base_us_per_div * APP_LVGL_TIME_DIV_COUNT) / APP_LVGL_WAVEFORM_INNER_WIDTH;
-        char time_text[24] = {0};
-        char freq_text[24] = {0};
-        app_lvgl_format_time(delta_us, time_text, sizeof(time_text));
-        app_lvgl_format_frequency(delta_us, freq_text, sizeof(freq_text));
-        lv_label_set_text_fmt(s_lvgl.cursor_label, "dT %s  F %s", time_text, freq_text);
-    } else if (voltage_mode) {
-        for (uint8_t i = 0; i < 2; i++) {
-            lv_obj_set_size(s_lvgl.cursor_lines[i], APP_LVGL_WAVEFORM_INNER_WIDTH, 2);
-            lv_obj_set_x(s_lvgl.cursor_lines[i], APP_LVGL_WAVEFORM_INNER_X);
-        }
-
-        const int32_t y0 = lv_obj_get_y(s_lvgl.cursor_lines[0]) - APP_LVGL_WAVEFORM_INNER_Y;
-        const int32_t y1 = lv_obj_get_y(s_lvgl.cursor_lines[1]) - APP_LVGL_WAVEFORM_INNER_Y;
-        const uint32_t dy = (uint32_t)LV_ABS(y1 - y0);
-        const uint32_t delta_mv = (dy * s_lvgl.voltage_base_mv_per_div * APP_LVGL_VOLTAGE_DIV_COUNT) / APP_LVGL_WAVEFORM_INNER_HEIGHT;
-        char voltage_text[24] = {0};
-        app_lvgl_format_voltage(delta_mv, voltage_text, sizeof(voltage_text));
-        lv_label_set_text_fmt(s_lvgl.cursor_label, "dV %s", voltage_text);
-    }
-
-    if (s_lvgl.waveform_renderer != NULL) {
-        lv_obj_align_to(s_lvgl.cursor_label, s_lvgl.waveform_renderer, LV_ALIGN_BOTTOM_RIGHT, -8, -8);
-    }
-    lv_obj_move_foreground(s_lvgl.cursor_label);
-    lv_obj_move_foreground(s_lvgl.cursor_lines[0]);
-    lv_obj_move_foreground(s_lvgl.cursor_lines[1]);
-}
-
-/**
- * @brief Move o cursor arrastado pelo toque.
- *
- * @param[in] event Evento LVGL da linha de cursor.
- */
-static void app_lvgl_cursor_line_event_cb(lv_event_t *event)
-{
-    const uint8_t cursor_index = (uint8_t)(uintptr_t)lv_event_get_user_data(event);
-    if (cursor_index >= 2 || !s_lvgl.paused || s_lvgl.cursor_mode == APP_LVGL_CURSOR_MODE_OFF) {
-        return;
-    }
-
-    lv_indev_t *indev = lv_indev_get_act();
-    if (indev == NULL) {
-        return;
-    }
-
-    lv_point_t point = {0};
-    lv_indev_get_point(indev, &point);
-    lv_obj_t *line = s_lvgl.cursor_lines[cursor_index];
-
-    if (s_lvgl.cursor_mode == APP_LVGL_CURSOR_MODE_TIME) {
-        int32_t x = point.x;
-        if (x < APP_LVGL_WAVEFORM_INNER_X) {
-            x = APP_LVGL_WAVEFORM_INNER_X;
-        } else if (x > APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH - 2) {
-            x = APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH - 2;
-        }
-        lv_obj_set_x(line, x);
-    } else {
-        int32_t y = point.y;
-        if (y < APP_LVGL_WAVEFORM_INNER_Y) {
-            y = APP_LVGL_WAVEFORM_INNER_Y;
-        } else if (y > APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT - 2) {
-            y = APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT - 2;
-        }
-        lv_obj_set_y(line, y);
-    }
-
-    app_lvgl_update_cursor_label();
-}
-
-/**
- * @brief Cria os cursores de tempo/tensao sobre a area da waveform.
- *
- * @param[in] parent Tela principal.
- */
-static void app_lvgl_create_cursors(lv_obj_t *parent)
-{
-    const int32_t initial_x[] = {
-        APP_LVGL_WAVEFORM_INNER_X + (APP_LVGL_WAVEFORM_INNER_WIDTH / 3),
-        APP_LVGL_WAVEFORM_INNER_X + ((APP_LVGL_WAVEFORM_INNER_WIDTH * 2) / 3),
-    };
-    const int32_t initial_y[] = {
-        APP_LVGL_WAVEFORM_INNER_Y + (APP_LVGL_WAVEFORM_INNER_HEIGHT / 3),
-        APP_LVGL_WAVEFORM_INNER_Y + ((APP_LVGL_WAVEFORM_INNER_HEIGHT * 2) / 3),
-    };
-
-    for (uint8_t i = 0; i < 2; i++) {
-        lv_obj_t *line = lv_obj_create(parent);
-        s_lvgl.cursor_lines[i] = line;
-        lv_obj_remove_style_all(line);
-        lv_obj_set_pos(line, initial_x[i], initial_y[i]);
-        lv_obj_set_size(line, 2, APP_LVGL_WAVEFORM_INNER_HEIGHT);
-        lv_obj_set_style_bg_color(line, lv_color_hex(app_lvgl_theme_overlay_text()), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(line, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_add_flag(line, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_ext_click_area(line, 18);
-        lv_obj_add_event_cb(line, app_lvgl_cursor_line_event_cb, LV_EVENT_PRESSING, (void *)(uintptr_t)i);
-        lv_obj_add_flag(line, LV_OBJ_FLAG_HIDDEN);
-    }
-
-    s_lvgl.cursor_label = lv_label_create(parent);
-    lv_obj_set_width(s_lvgl.cursor_label, 240);
-    lv_obj_set_style_text_color(s_lvgl.cursor_label, lv_color_hex(app_lvgl_theme_overlay_text()), LV_PART_MAIN);
-    lv_obj_set_style_text_align(s_lvgl.cursor_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_lvgl.cursor_label, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lvgl.cursor_label, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_label_set_text(s_lvgl.cursor_label, "");
-    if (s_lvgl.waveform_renderer != NULL) {
-        lv_obj_align_to(s_lvgl.cursor_label, s_lvgl.waveform_renderer, LV_ALIGN_BOTTOM_RIGHT, -8, -8);
-    }
-    lv_obj_add_flag(s_lvgl.cursor_label, LV_OBJ_FLAG_HIDDEN);
-}
-
-/**
- * @brief Cria a linha de nivel de trigger.
- *
- * @param[in] parent Tela principal.
- */
-static void app_lvgl_create_trigger_line(lv_obj_t *parent)
-{
-    s_lvgl.trigger_enabled = false;
-    s_lvgl.trigger_rising = true;
-    s_lvgl.trigger_single_captured = false;
-    s_lvgl.trigger_mode = 0;
-    s_lvgl.trigger_channel = 0;
-
-    s_lvgl.trigger_line = lv_obj_create(parent);
-    lv_obj_remove_style_all(s_lvgl.trigger_line);
-    lv_obj_set_size(s_lvgl.trigger_line, APP_LVGL_WAVEFORM_INNER_WIDTH, 2);
-    lv_obj_set_pos(s_lvgl.trigger_line,
-                   APP_LVGL_WAVEFORM_INNER_X,
-                   APP_LVGL_WAVEFORM_INNER_Y + (APP_LVGL_WAVEFORM_INNER_HEIGHT / 2));
-    lv_obj_set_style_bg_color(s_lvgl.trigger_line, lv_color_hex(0xffd600), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_lvgl.trigger_line, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_add_flag(s_lvgl.trigger_line, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_ext_click_area(s_lvgl.trigger_line, 18);
-    lv_obj_add_event_cb(s_lvgl.trigger_line, app_lvgl_trigger_line_event_cb, LV_EVENT_PRESSING, NULL);
-
-    s_lvgl.trigger_marker = lv_obj_create(parent);
-    lv_obj_remove_style_all(s_lvgl.trigger_marker);
-    lv_obj_set_size(s_lvgl.trigger_marker, APP_LVGL_TRIGGER_MARKER_WIDTH, 2);
-    lv_obj_set_pos(s_lvgl.trigger_marker,
-                   APP_LVGL_WAVEFORM_INNER_X,
-                   APP_LVGL_WAVEFORM_INNER_Y + (APP_LVGL_WAVEFORM_INNER_HEIGHT / 2));
-    lv_obj_set_style_bg_color(s_lvgl.trigger_marker, lv_color_hex(0xffd600), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_lvgl.trigger_marker, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_add_flag(s_lvgl.trigger_marker, LV_OBJ_FLAG_HIDDEN);
-
-    s_lvgl.trigger_hide_timer = lv_timer_create(app_lvgl_trigger_hide_timer_cb, APP_LVGL_TRIGGER_HIDE_MS, NULL);
-    if (s_lvgl.trigger_hide_timer != NULL) {
-        lv_timer_pause(s_lvgl.trigger_hide_timer);
-    }
-}
-
-/**
- * @brief Cria o controle vertical de brilho dentro da waveform.
- *
- * @param[in] parent Tela principal.
- */
-static void app_lvgl_create_backlight_control(lv_obj_t *parent)
-{
-    s_lvgl.backlight_percent = APP_LVGL_BACKLIGHT_DEFAULT_PERCENT;
-
-    s_lvgl.backlight_slider = lv_slider_create(parent);
-    lv_obj_set_size(s_lvgl.backlight_slider, APP_LVGL_BACKLIGHT_SLIDER_WIDTH, APP_LVGL_BACKLIGHT_SLIDER_HEIGHT);
-    lv_obj_set_pos(s_lvgl.backlight_slider,
-                   APP_LVGL_WAVEFORM_INNER_X + ((APP_LVGL_WAVEFORM_INNER_WIDTH - APP_LVGL_BACKLIGHT_SLIDER_WIDTH) / 2),
-                   APP_LVGL_WAVEFORM_INNER_Y + ((APP_LVGL_WAVEFORM_INNER_HEIGHT - APP_LVGL_BACKLIGHT_SLIDER_HEIGHT) / 2));
-    lv_slider_set_range(s_lvgl.backlight_slider, APP_LVGL_BACKLIGHT_MIN_PERCENT, APP_LVGL_BACKLIGHT_MAX_PERCENT);
-    lv_slider_set_value(s_lvgl.backlight_slider, s_lvgl.backlight_percent, LV_ANIM_OFF);
-    lv_obj_set_style_radius(s_lvgl.backlight_slider, 18, LV_PART_MAIN);
-    lv_obj_set_style_radius(s_lvgl.backlight_slider, 18, LV_PART_INDICATOR);
-    lv_obj_set_style_radius(s_lvgl.backlight_slider, 18, LV_PART_KNOB);
-    lv_obj_set_style_bg_color(s_lvgl.backlight_slider, lv_color_hex(0x303030), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_lvgl.backlight_slider, lv_color_hex(0x4fc3f7), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(s_lvgl.backlight_slider, lv_color_hex(0x4fc3f7), LV_PART_KNOB);
-    lv_obj_add_event_cb(s_lvgl.backlight_slider, app_lvgl_backlight_slider_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_flag(s_lvgl.backlight_slider, LV_OBJ_FLAG_HIDDEN);
-
-    s_lvgl.backlight_label = lv_label_create(parent);
-    lv_obj_set_style_text_color(s_lvgl.backlight_label, lv_color_hex(app_lvgl_theme_overlay_text()), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lvgl.backlight_label, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_label_set_text_fmt(s_lvgl.backlight_label, "%u%%", (unsigned)s_lvgl.backlight_percent);
-    lv_obj_align_to(s_lvgl.backlight_label, s_lvgl.backlight_slider, LV_ALIGN_OUT_BOTTOM_MID, 0, 6);
-    lv_obj_add_flag(s_lvgl.backlight_label, LV_OBJ_FLAG_HIDDEN);
-}
-
-/**
- * @brief Converte uma amostra ADC para a coordenada vertical da waveform.
- */
-static uint16_t app_lvgl_waveform_sample_to_y(uint16_t sample)
-{
-    if (sample > (APP_LVGL_ADC_CENTER * 2)) {
-        sample = APP_LVGL_ADC_CENTER * 2;
-    }
-    return s_waveform_y_lookup[sample];
-}
-
-static void app_lvgl_trigger_edge_event_cb(lv_event_t *event)
-{
-    lv_obj_t *dropdown = lv_event_get_target_obj(event);
-    s_lvgl.trigger_rising = lv_dropdown_get_selected(dropdown) == 0;
-    s_lvgl.trigger_single_captured = false;
-    if (s_lvgl.waveform_renderer != NULL) {
-        lv_obj_invalidate(s_lvgl.waveform_renderer);
-    }
-}
-
-static void app_lvgl_trigger_channel_event_cb(lv_event_t *event)
-{
-    lv_obj_t *dropdown = lv_event_get_target_obj(event);
-    s_lvgl.trigger_channel = (uint8_t)lv_dropdown_get_selected(dropdown);
-    s_lvgl.trigger_single_captured = false;
-    if (s_lvgl.waveform_renderer != NULL) {
-        lv_obj_invalidate(s_lvgl.waveform_renderer);
-    }
-}
-
-/**
- * @brief Retorna uma amostra na ordem visual: esquerda (mais antiga) para direita (mais nova).
- */
-static uint16_t app_lvgl_waveform_get_sample(uint8_t channel, uint32_t visual_index)
-{
-    const uint32_t physical_index = (s_lvgl.waveform_sample_head + visual_index) % APP_LVGL_HISTORY_SAMPLE_COUNT;
-    return s_lvgl.waveform_samples[channel][physical_index];
-}
-
-/**
- * @brief Insere uma amostra multicanal no historico circular da waveform.
- *
- * Esta e a fronteira entre aquisicao e interface: o gerador simulado usa a
- * mesma entrada que sera usada futuramente pelo receptor SPI do ADC.
- */
-static void app_lvgl_waveform_push_samples(const int32_t samples[4])
-{
-    uint32_t write_index;
-    if (s_lvgl.waveform_sample_count < APP_LVGL_HISTORY_SAMPLE_COUNT) {
-        write_index = (s_lvgl.waveform_sample_head + s_lvgl.waveform_sample_count) % APP_LVGL_HISTORY_SAMPLE_COUNT;
-        s_lvgl.waveform_sample_count++;
-    } else {
-        write_index = s_lvgl.waveform_sample_head;
-        s_lvgl.waveform_sample_head = (s_lvgl.waveform_sample_head + 1) % APP_LVGL_HISTORY_SAMPLE_COUNT;
-    }
-
-    for (uint8_t channel = 0; channel < 4; channel++) {
-        uint16_t sample = (uint16_t)samples[channel];
-        if (sample > (APP_LVGL_ADC_CENTER * 2)) {
-            sample = APP_LVGL_ADC_CENTER * 2;
-        }
-        s_lvgl.waveform_samples[channel][write_index] = sample;
-    }
-}
-
-static uint32_t app_lvgl_waveform_visible_samples(void)
-{
-    uint64_t samples = ((uint64_t)s_lvgl.time_base_us_per_div * APP_LVGL_TIME_DIV_COUNT * APP_LVGL_SIM_SAMPLE_RATE_HZ) / 1000000U;
-    if (samples < 2) {
-        samples = 2;
-    } else if (samples > APP_LVGL_HISTORY_SAMPLE_COUNT) {
-        samples = APP_LVGL_HISTORY_SAMPLE_COUNT;
-    }
-    return (uint32_t)samples;
-}
-
-static void app_lvgl_update_buffer_label(void)
-{
-    if (s_lvgl.buffer_label != NULL) {
-        const uint32_t displayed_position = s_lvgl.history_view_offset < s_lvgl.waveform_sample_count ?
-                                            s_lvgl.waveform_sample_count - s_lvgl.history_view_offset : 0;
-        const uint32_t percent = (s_lvgl.paused ? displayed_position : s_lvgl.waveform_sample_count) * 100U /
-                                 APP_LVGL_HISTORY_SAMPLE_COUNT;
-        lv_label_set_text_fmt(s_lvgl.buffer_label, "Buffer: %u%%", (unsigned)percent);
-    }
-}
-
-/**
- * @brief Navega pelo historico ao arrastar a waveform em modo Pause.
- */
-static void app_lvgl_waveform_history_drag_event_cb(lv_event_t *event)
-{
-    if (!s_lvgl.paused || s_lvgl.waveform_sample_count == 0) {
-        return;
-    }
-
-    lv_indev_t *indev = lv_indev_get_act();
-    if (indev == NULL) {
-        return;
-    }
-    lv_point_t point = {0};
-    lv_indev_get_point(indev, &point);
-
-    if (lv_event_get_code(event) == LV_EVENT_PRESSED) {
-        s_lvgl.history_drag_last_x = point.x;
-        return;
-    }
-
-    const int32_t delta_x = point.x - s_lvgl.history_drag_last_x;
-    s_lvgl.history_drag_last_x = point.x;
-    if (delta_x == 0) {
-        return;
-    }
-
-    const uint32_t visible_samples = app_lvgl_waveform_visible_samples();
-    const uint32_t max_offset = s_lvgl.waveform_sample_count > visible_samples ?
-                                s_lvgl.waveform_sample_count - visible_samples : 0;
-    const uint32_t samples_per_pixel = (visible_samples + APP_LVGL_WAVEFORM_INNER_WIDTH - 1) / APP_LVGL_WAVEFORM_INNER_WIDTH;
-    const uint32_t movement = (uint32_t)abs(delta_x) * samples_per_pixel;
-
-    if (delta_x > 0) { /* arrastar para a direita revela amostras mais antigas */
-        const uint32_t available = max_offset - s_lvgl.history_view_offset;
-        s_lvgl.history_view_offset += movement < available ? movement : available;
-        s_lvgl.history_navigation_started |= s_lvgl.history_view_offset > 0;
-    } else if (s_lvgl.history_navigation_started) {
-        s_lvgl.history_view_offset = movement >= s_lvgl.history_view_offset ? 0 : s_lvgl.history_view_offset - movement;
-    }
-    app_lvgl_update_buffer_label();
-    lv_obj_invalidate(s_lvgl.waveform_renderer);
-}
-
-static void app_lvgl_waveform_set_pixel(uint16_t *framebuffer, uint32_t stride_px, const lv_area_t *buffer_area, const lv_area_t *clip_area, int32_t x, int32_t y, uint16_t color)
-{
-    if (x >= APP_LVGL_WAVEFORM_INNER_X && x < APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH &&
-        y >= APP_LVGL_WAVEFORM_INNER_Y && y < APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT &&
-        x >= clip_area->x1 && x <= clip_area->x2 && y >= clip_area->y1 && y <= clip_area->y2) {
-        framebuffer[((y - buffer_area->y1) * stride_px) + x - buffer_area->x1] = color;
-    }
-}
-
-static void app_lvgl_waveform_draw_line(uint16_t *framebuffer, uint32_t stride_px, const lv_area_t *buffer_area, const lv_area_t *clip_area, int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t color)
-{
-    int32_t dx = abs(x1 - x0);
-    int32_t sx = x0 < x1 ? 1 : -1;
-    int32_t dy = -abs(y1 - y0);
-    int32_t sy = y0 < y1 ? 1 : -1;
-    int32_t error = dx + dy;
-
-    while (true) {
-        app_lvgl_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, x0, y0, color);
-        if (x0 == x1 && y0 == y1) {
-            break;
-        }
-        const int32_t twice_error = 2 * error;
-        if (twice_error >= dy) {
-            error += dy;
-            x0 += sx;
-        }
-        if (twice_error <= dx) {
-            error += dx;
-            y0 += sy;
-        }
-    }
-}
-
-/**
- * @brief Localiza a borda de trigger mais recente que permite centralizar a janela.
- */
-static bool app_lvgl_waveform_find_trigger(uint32_t displayed_samples, uint32_t *first_sample)
-{
-    if (!s_lvgl.trigger_enabled || s_lvgl.paused || s_lvgl.trigger_channel >= 4 ||
-        s_lvgl.waveform_sample_count < displayed_samples) {
-        return false;
-    }
-
-    int32_t threshold = lv_obj_get_y(s_lvgl.trigger_line) - APP_LVGL_WAVEFORM_INNER_Y;
-    if (threshold < 0) {
-        threshold = 0;
-    } else if (threshold >= APP_LVGL_WAVEFORM_INNER_HEIGHT) {
-        threshold = APP_LVGL_WAVEFORM_INNER_HEIGHT - 1;
-    }
-
-    const int32_t hysteresis = 4;
-    const uint32_t left_samples = displayed_samples / 2;
-    const uint32_t right_samples = displayed_samples - left_samples - 1;
-    const uint32_t last_event = s_lvgl.waveform_sample_count - right_samples - 1;
-
-    for (uint32_t index = last_event; index > left_samples; index--) {
-        const int32_t previous = app_lvgl_waveform_sample_to_y(app_lvgl_waveform_get_sample(s_lvgl.trigger_channel, index - 1));
-        const int32_t current = app_lvgl_waveform_sample_to_y(app_lvgl_waveform_get_sample(s_lvgl.trigger_channel, index));
-        const bool crossed = s_lvgl.trigger_rising ?
-                             (previous >= threshold + hysteresis && current <= threshold - hysteresis) :
-                             (previous <= threshold - hysteresis && current >= threshold + hysteresis);
-        if (crossed) {
-            *first_sample = index - left_samples;
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Desenha diretamente no framebuffer RGB565 pertencente a camada LVGL atual.
- *
- * O objeto fica abaixo dos cursores e controles LVGL. Assim, os objetos sobrepostos
- * continuam sendo compostos normalmente depois deste callback.
- */
-static void app_lvgl_waveform_draw_event_cb(lv_event_t *event)
-{
-    lv_layer_t *layer = lv_event_get_layer(event);
-    if (layer == NULL || layer->draw_buf == NULL || layer->draw_buf->data == NULL) {
-        return;
-    }
-
-    uint16_t *framebuffer = (uint16_t *)layer->draw_buf->data;
-    const uint32_t stride_px = layer->draw_buf->header.stride / sizeof(uint16_t);
-    const lv_area_t *clip_area = &layer->_clip_area;
-    const lv_area_t *buffer_area = &layer->buf_area;
-    const uint16_t background = lv_color_to_u16(lv_color_hex(app_lvgl_theme_waveform_bg()));
-    const uint16_t dot = lv_color_to_u16(lv_color_hex(app_lvgl_theme_grid_dot()));
-    const uint16_t center = lv_color_to_u16(lv_color_hex(app_lvgl_theme_grid_center()));
-
-    const int32_t render_x1 = clip_area->x1 > APP_LVGL_WAVEFORM_INNER_X ? clip_area->x1 : APP_LVGL_WAVEFORM_INNER_X;
-    const int32_t render_y1 = clip_area->y1 > APP_LVGL_WAVEFORM_INNER_Y ? clip_area->y1 : APP_LVGL_WAVEFORM_INNER_Y;
-    const int32_t render_x2 = clip_area->x2 < APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH - 1 ?
-                              clip_area->x2 : APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH - 1;
-    const int32_t render_y2 = clip_area->y2 < APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT - 1 ?
-                              clip_area->y2 : APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT - 1;
-    for (int32_t y = render_y1; y <= render_y2; y++) {
-        uint16_t *row = framebuffer + ((y - buffer_area->y1) * stride_px) + render_x1 - buffer_area->x1;
-        for (int32_t x = render_x1; x <= render_x2; x++) {
-            *row++ = background;
-        }
-    }
-
-    for (int32_t horizontal_index = 1; horizontal_index < 8; horizontal_index++) {
-        if (horizontal_index != 4) {
-            const int32_t y = APP_LVGL_WAVEFORM_INNER_Y + (horizontal_index * 46);
-            for (int32_t x = APP_LVGL_WAVEFORM_INNER_X; x < APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH; x += 8) {
-                app_lvgl_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, x, y, dot);
-            }
-        }
-    }
-    for (int32_t vertical_index = 1; vertical_index < 10; vertical_index++) {
-        if (vertical_index != 5) {
-            const int32_t x = APP_LVGL_WAVEFORM_INNER_X + (vertical_index * 70);
-            for (int32_t y = APP_LVGL_WAVEFORM_INNER_Y; y < APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT; y += 8) {
-                app_lvgl_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, x, y, dot);
-            }
-        }
-    }
-    for (int32_t x = APP_LVGL_WAVEFORM_INNER_X; x < APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH; x += 4) {
-        app_lvgl_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, x, APP_LVGL_WAVEFORM_INNER_Y + (APP_LVGL_WAVEFORM_INNER_HEIGHT / 2), center);
-    }
-    for (int32_t y = APP_LVGL_WAVEFORM_INNER_Y; y < APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT; y += 4) {
-        app_lvgl_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, APP_LVGL_WAVEFORM_INNER_X + (APP_LVGL_WAVEFORM_INNER_WIDTH / 2), y, center);
-    }
-
-    const uint32_t visible_samples = app_lvgl_waveform_visible_samples();
-    if (s_lvgl.waveform_sample_count < 2) {
-        return;
-    }
-    const uint32_t displayed_samples = s_lvgl.waveform_sample_count < visible_samples ? s_lvgl.waveform_sample_count : visible_samples;
-    const uint32_t max_offset = s_lvgl.waveform_sample_count - displayed_samples;
-    const uint32_t view_offset = s_lvgl.history_view_offset < max_offset ? s_lvgl.history_view_offset : max_offset;
-    uint32_t first_sample = max_offset - view_offset;
-    bool draw_signal = true;
-    bool plot_triggered = false;
-    const bool trigger_active = !s_lvgl.paused && s_lvgl.time_base_us_per_div <= 100000U &&
-                                displayed_samples == visible_samples && s_lvgl.trigger_enabled;
-    if (trigger_active) {
-        if (s_lvgl.trigger_mode == 3 && s_lvgl.trigger_single_captured) {
-            first_sample = s_lvgl.trigger_single_first_sample;
-            plot_triggered = true;
-        } else {
-            const bool trigger_found = app_lvgl_waveform_find_trigger(displayed_samples, &first_sample);
-            if (trigger_found && s_lvgl.trigger_mode == 3) {
-                s_lvgl.trigger_single_first_sample = first_sample;
-                s_lvgl.trigger_single_captured = true;
-                plot_triggered = true;
-            } else if (trigger_found) {
-                plot_triggered = true;
-            } else if (!trigger_found && s_lvgl.trigger_mode != 2) {
-                draw_signal = false;
-            }
-        }
-    }
-    if (!draw_signal) {
-        s_lvgl.last_plot_sample_count = 0;
-        s_lvgl.last_plot_triggered = false;
-        return;
-    }
-    s_lvgl.last_plot_first_sample = first_sample;
-    s_lvgl.last_plot_sample_count = displayed_samples;
-    s_lvgl.last_plot_triggered = plot_triggered;
-    const uint16_t first_x = APP_LVGL_WAVEFORM_INNER_X;
-    const uint16_t rendered_width = 1 + (uint16_t)(((uint64_t)(displayed_samples - 1) * (APP_LVGL_CHART_POINT_COUNT - 1)) /
-                                                    (visible_samples - 1));
-
-    for (uint16_t sample_index = 1; sample_index < rendered_width; sample_index++) {
-        const uint32_t source0 = first_sample + (((uint64_t)(sample_index - 1) * (displayed_samples - 1)) / (rendered_width - 1));
-        const uint32_t source1 = first_sample + (((uint64_t)sample_index * (displayed_samples - 1)) / (rendered_width - 1));
-        const int32_t x0 = first_x + sample_index - 1;
-        const int32_t x1 = first_x + sample_index;
-        for (uint8_t channel = 0; channel < 4; channel++) {
-            if (s_lvgl.channel_visible[channel]) {
-                const uint16_t color = lv_color_to_u16(lv_color_hex(APP_LVGL_CHANNEL_COLORS[channel]));
-                app_lvgl_waveform_draw_line(framebuffer, stride_px, buffer_area, clip_area,
-                                             x0, APP_LVGL_WAVEFORM_INNER_Y + app_lvgl_waveform_sample_to_y(app_lvgl_waveform_get_sample(channel, source0)),
-                                             x1, APP_LVGL_WAVEFORM_INNER_Y + app_lvgl_waveform_sample_to_y(app_lvgl_waveform_get_sample(channel, source1)), color);
-            }
-        }
-    }
-}
-
-/**
- * @brief Limpa o estado da varredura incremental da waveform.
- */
-static void app_lvgl_waveform_reset(void)
-{
-    s_lvgl.waveform_sample_count = 0;
-    s_lvgl.waveform_sample_head = 0;
-    s_lvgl.history_view_offset = 0;
-    s_lvgl.history_navigation_started = false;
-    app_lvgl_update_buffer_label();
-}
-
-/**
- * @brief Atualiza a waveform diretamente no framebuffer, sem usar lv_chart.
- *
- * @param[in] timer Timer LVGL que controla a simulacao.
- */
-static void app_lvgl_chart_timer_cb(lv_timer_t *timer)
-{
-    (void)timer;
-
-    if (s_lvgl.waveform_renderer == NULL) {
-        return;
-    }
-    if (s_lvgl.paused) {
-        return;
-    }
-
-    bool any_channel_visible = false;
-    for (uint8_t channel = 0; channel < 4; channel++) {
-        any_channel_visible |= s_lvgl.channel_visible[channel];
-    }
-    if (!any_channel_visible) {
-        return;
-    }
-
-    const uint32_t points_to_add = (APP_LVGL_CHART_TIMER_MS * APP_LVGL_SIM_SAMPLE_RATE_HZ) / 1000U;
-    const uint32_t sample_time_us = 1000000U / APP_LVGL_SIM_SAMPLE_RATE_HZ;
-
-    for (uint32_t i = 0; i < points_to_add; i++) {
-        const uint32_t phase_us = s_lvgl.square_phase_us;
-        const bool high = app_lvgl_next_square_state(sample_time_us);
-        const bool ch3_high = ((phase_us + APP_LVGL_PHASE_OFFSET_US) % APP_LVGL_SQUARE_PERIOD_US) < (APP_LVGL_SQUARE_PERIOD_US / 2);
-        const bool ch4_high = ((phase_us + APP_LVGL_SQUARE_PERIOD_US - APP_LVGL_PHASE_OFFSET_US) % APP_LVGL_SQUARE_PERIOD_US) < (APP_LVGL_SQUARE_PERIOD_US / 2);
-        const int32_t ch1_sample = high ? APP_LVGL_CH1_HIGH : APP_LVGL_CH1_LOW;
-        const int32_t ch2_sample = high ? APP_LVGL_CH2_HIGH : APP_LVGL_CH2_LOW;
-        const int32_t ch3_sample = (ch3_high ? APP_LVGL_CH1_HIGH : APP_LVGL_CH1_LOW) - APP_LVGL_CH3_OFFSET;
-        const int32_t ch4_sample = (ch4_high ? APP_LVGL_CH1_HIGH : APP_LVGL_CH1_LOW) - APP_LVGL_CH4_OFFSET;
-        const int32_t samples[] = {ch1_sample, ch2_sample, ch3_sample, ch4_sample};
-        app_lvgl_waveform_push_samples(samples);
-    }
-    app_lvgl_update_buffer_label();
-    lv_obj_invalidate(s_lvgl.waveform_renderer);
-}
-
-/**
- * @brief Cria o objeto que desenha a waveform diretamente no framebuffer RGB565.
- *
- * @param[in] parent Tela principal.
- */
-static void app_lvgl_create_waveform_renderer(lv_obj_t *parent)
-{
-    for (uint16_t sample = 0; sample <= (APP_LVGL_ADC_CENTER * 2); sample++) {
-        s_waveform_y_lookup[sample] = (uint16_t)((((APP_LVGL_ADC_CENTER * 2) - sample) * (APP_LVGL_WAVEFORM_INNER_HEIGHT - 1)) /
-                                                  (APP_LVGL_ADC_CENTER * 2));
-    }
-    for (uint8_t channel = 0; channel < 4; channel++) {
-        s_lvgl.waveform_samples[channel] = heap_caps_malloc(APP_LVGL_HISTORY_BYTES_PER_CHANNEL, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (s_lvgl.waveform_samples[channel] == NULL) {
-            ESP_LOGE(TAG, "sem PSRAM para o historico do canal %u", (unsigned)(channel + 1));
-            return;
-        }
-    }
-    s_lvgl.waveform_renderer = lv_obj_create(parent);
-    lv_obj_remove_style_all(s_lvgl.waveform_renderer);
-    lv_obj_set_size(s_lvgl.waveform_renderer, APP_LVGL_WAVEFORM_INNER_WIDTH, APP_LVGL_WAVEFORM_INNER_HEIGHT);
-    lv_obj_set_pos(s_lvgl.waveform_renderer, APP_LVGL_WAVEFORM_INNER_X, APP_LVGL_WAVEFORM_INNER_Y);
-    lv_obj_add_flag(s_lvgl.waveform_renderer, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_clear_flag(s_lvgl.waveform_renderer, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(s_lvgl.waveform_renderer, app_lvgl_waveform_draw_event_cb, LV_EVENT_DRAW_MAIN, NULL);
-    lv_obj_add_event_cb(s_lvgl.waveform_renderer, app_lvgl_waveform_history_drag_event_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(s_lvgl.waveform_renderer, app_lvgl_waveform_history_drag_event_cb, LV_EVENT_PRESSING, NULL);
-
-    s_lvgl.buffer_label = lv_label_create(parent);
-    lv_obj_set_style_text_color(s_lvgl.buffer_label, lv_color_hex(app_lvgl_theme_overlay_text()), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lvgl.buffer_label, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_lvgl.buffer_label, lv_color_hex(app_lvgl_theme_waveform_bg()), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_lvgl.buffer_label, LV_OPA_70, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_lvgl.buffer_label, 2, LV_PART_MAIN);
-    lv_obj_align_to(s_lvgl.buffer_label, s_lvgl.waveform_renderer, LV_ALIGN_TOP_RIGHT, -72, 8);
-
-    s_lvgl.time_base_us_per_div = APP_LVGL_DEFAULT_TIME_BASE_US_PER_DIV;
-    s_lvgl.voltage_base_mv_per_div = APP_LVGL_DEFAULT_VOLTAGE_BASE_MV_PER_DIV;
-    s_lvgl.square_phase_us = 0;
-    app_lvgl_waveform_reset();
-    s_lvgl.paused = false;
-    lv_timer_create(app_lvgl_chart_timer_cb, APP_LVGL_CHART_TIMER_MS, NULL);
-}
-
-/**
- * @brief Cria a area de waveform com borda e grade pontilhada.
- *
- * @param[in] parent Tela principal.
- */
-static void app_lvgl_create_waveform_area(lv_obj_t *parent)
-{
-    lv_obj_t *waveform = lv_obj_create(parent);
-    lv_obj_remove_style_all(waveform);
-    lv_obj_set_size(waveform, APP_LVGL_WAVEFORM_WIDTH, APP_LVGL_WAVEFORM_HEIGHT);
-    lv_obj_set_pos(waveform, APP_LVGL_WAVEFORM_X, APP_LVGL_WAVEFORM_Y);
-    lv_obj_set_style_bg_color(waveform, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(waveform, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(waveform, APP_LVGL_WAVEFORM_BORDER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(waveform, lv_color_hex(0xffffff), LV_PART_MAIN);
-    lv_obj_set_style_radius(waveform, 0, LV_PART_MAIN);
-
-    app_lvgl_create_waveform_renderer(parent);
-    app_lvgl_create_cursors(parent);
-    app_lvgl_create_trigger_line(parent);
-    app_lvgl_create_backlight_control(parent);
-}
-
-/**
- * @brief Cria uma linha de medicoes de canal.
- *
- * @param[in] parent Tela principal.
- * @param[in] channel_index Indice do canal, de 0 a 3.
- * @param[in] column Coluna da linha inferior, de 0 a 1.
- * @param[in] y Coordenada vertical da linha.
- */
-static void app_lvgl_create_measurement_row(lv_obj_t *parent, uint8_t channel_index, uint8_t column, int32_t y)
-{
-    const char *texts[] = {
-        "RMS 0.00",
-        "PK+ 0.00",
-        "PK- 0.00",
-        "FREQ 0.0 Hz",
-        "DUTY 0%",
-    };
-    const lv_color_t text_color = lv_color_hex(channel_index == 1 ? 0x000000 : 0xffffff);
-
-    const int32_t x = column == 0 ? 0 : APP_LVGL_CHANNEL_INFO_WIDTH + APP_LVGL_CHANNEL_INFO_GAP;
-
-    lv_obj_t *row = lv_obj_create(parent);
-    lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, APP_LVGL_CHANNEL_INFO_WIDTH, APP_LVGL_CHANNEL_ROW_HEIGHT);
-    lv_obj_set_pos(row, x, y);
-    lv_obj_set_scroll_dir(row, LV_DIR_HOR);
-    lv_obj_set_scrollbar_mode(row, LV_SCROLLBAR_MODE_ACTIVE);
-    lv_obj_set_style_bg_color(row, lv_color_hex(APP_LVGL_CHANNEL_COLORS[channel_index]), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_radius(row, 5, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(row, 0, LV_PART_MAIN);
-
-    for (size_t i = 0; i < (sizeof(texts) / sizeof(texts[0])); i++) {
-        lv_obj_t *label = lv_label_create(row);
-        lv_label_set_text(label, texts[i]);
-        s_lvgl.measurement_labels[channel_index][i] = label;
-        lv_obj_set_style_text_color(label, text_color, LV_PART_MAIN);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, APP_LVGL_MEASUREMENT_X[i], 0);
-    }
-}
-
-static uint32_t app_lvgl_counts_to_mv(uint32_t counts)
-{
-    return (counts * s_lvgl.voltage_base_mv_per_div) / APP_LVGL_ADC_DIV_VALUE;
-}
-
-static void app_lvgl_clear_measurements(uint8_t channel)
-{
-    lv_label_set_text(s_lvgl.measurement_labels[channel][0], "RMS 0.00");
-    lv_label_set_text(s_lvgl.measurement_labels[channel][1], "PK+ 0.00");
-    lv_label_set_text(s_lvgl.measurement_labels[channel][2], "PK- 0.00");
-    lv_label_set_text(s_lvgl.measurement_labels[channel][3], "FREQ 0.0Hz");
-    lv_label_set_text(s_lvgl.measurement_labels[channel][4], "DUTY 0%");
-}
-
-static void app_lvgl_update_frequency_duty(uint8_t channel, uint32_t first_sample, uint32_t sample_count)
-{
-    if (channel != s_lvgl.trigger_channel || !s_lvgl.trigger_enabled || !s_lvgl.last_plot_triggered) {
-        lv_label_set_text(s_lvgl.measurement_labels[channel][3], "FREQ --");
-        lv_label_set_text(s_lvgl.measurement_labels[channel][4], "DUTY --");
-        return;
-    }
-
-    uint32_t previous_rising = 0;
-    uint32_t last_rising = 0;
-    const uint16_t lower_threshold = APP_LVGL_ADC_CENTER - 16;
-    const uint16_t upper_threshold = APP_LVGL_ADC_CENTER + 16;
-    for (uint32_t index = 1; index < sample_count; index++) {
-        const uint16_t previous = app_lvgl_waveform_get_sample(channel, first_sample + index - 1);
-        const uint16_t current = app_lvgl_waveform_get_sample(channel, first_sample + index);
-        if (previous <= lower_threshold && current >= upper_threshold) {
-            previous_rising = last_rising;
-            last_rising = index;
-        }
-    }
-
-    if (previous_rising == 0 || last_rising <= previous_rising) {
-        lv_label_set_text(s_lvgl.measurement_labels[channel][3], "FREQ --");
-        lv_label_set_text(s_lvgl.measurement_labels[channel][4], "DUTY --");
-        return;
-    }
-
-    const uint32_t period_samples = last_rising - previous_rising;
-    uint32_t high_samples = 0;
-    for (uint32_t index = previous_rising; index < last_rising; index++) {
-        high_samples += app_lvgl_waveform_get_sample(channel, first_sample + index) >= APP_LVGL_ADC_CENTER;
-    }
-    const float frequency_hz = (float)APP_LVGL_SIM_SAMPLE_RATE_HZ / period_samples;
-    const uint32_t duty_percent = (high_samples * 100U) / period_samples;
-    lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][3], "FREQ %.1fHz", (double)frequency_hz);
-    lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][4], "DUTY %u%%", (unsigned)duty_percent);
-}
-
-/**
- * @brief Atualiza RMS, picos e medidas temporais da ultima janela desenhada.
- */
-static void app_lvgl_measurement_timer_cb(lv_timer_t *timer)
-{
-    (void)timer;
-    const uint32_t sample_count = s_lvgl.last_plot_sample_count;
-    const uint32_t first_sample = s_lvgl.last_plot_first_sample;
-    if (sample_count == 0) {
-        return;
-    }
-
-    for (uint8_t channel = 0; channel < 4; channel++) {
-        if (!s_lvgl.channel_visible[channel]) {
-            app_lvgl_clear_measurements(channel);
-            continue;
-        }
-        int32_t positive_peak = 0;
-        int32_t negative_peak = 0;
-        uint64_t sum_squares = 0;
-        for (uint32_t index = 0; index < sample_count; index++) {
-            const int32_t centered = (int32_t)app_lvgl_waveform_get_sample(channel, first_sample + index) - APP_LVGL_ADC_CENTER;
-            if (centered > positive_peak) {
-                positive_peak = centered;
-            }
-            if (centered < negative_peak) {
-                negative_peak = centered;
-            }
-            sum_squares += (uint64_t)(centered * centered);
-        }
-
-        const uint32_t rms_counts = (uint32_t)sqrt((double)sum_squares / sample_count);
-        char rms_text[16] = {0};
-        char positive_text[16] = {0};
-        char negative_text[16] = {0};
-        app_lvgl_format_voltage(app_lvgl_counts_to_mv(rms_counts), rms_text, sizeof(rms_text));
-        app_lvgl_format_voltage(app_lvgl_counts_to_mv((uint32_t)positive_peak), positive_text, sizeof(positive_text));
-        app_lvgl_format_voltage(app_lvgl_counts_to_mv((uint32_t)-negative_peak), negative_text, sizeof(negative_text));
-        lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][0], "RMS %s", rms_text);
-        lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][1], "PK+ %s", positive_text);
-        lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][2], "PK- -%s", negative_text);
-        app_lvgl_update_frequency_duty(channel, first_sample, sample_count);
-    }
-}
-
-/**
- * @brief Cria a area inferior com medicoes dos quatro canais.
- *
- * @param[in] parent Tela principal.
- */
-static void app_lvgl_create_measurements(lv_obj_t *parent)
-{
-    app_lvgl_create_measurement_row(parent, 0, 0, APP_LVGL_MEASUREMENTS_Y);
-    app_lvgl_create_measurement_row(parent, 2, 1, APP_LVGL_MEASUREMENTS_Y);
-    app_lvgl_create_measurement_row(parent, 1, 0, APP_LVGL_MEASUREMENTS_Y + APP_LVGL_CHANNEL_ROW_HEIGHT);
-    app_lvgl_create_measurement_row(parent, 3, 1, APP_LVGL_MEASUREMENTS_Y + APP_LVGL_CHANNEL_ROW_HEIGHT);
-    lv_timer_create(app_lvgl_measurement_timer_cb, 1000, NULL);
-}
-
-/**
- * @brief Cria a tela inicial do osciloscopio.
- */
-static void app_lvgl_create_ui(void)
-{
-    s_lvgl.screen = lv_obj_create(NULL);
-    s_lvgl.theme = APP_LVGL_THEME_DARK;
-    lv_obj_remove_style_all(s_lvgl.screen);
-    lv_obj_clear_flag(s_lvgl.screen, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(s_lvgl.screen, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_lvgl.screen, LV_OPA_COVER, LV_PART_MAIN);
-
-    app_lvgl_create_top_menu(s_lvgl.screen);
-    app_lvgl_create_channel_buttons(s_lvgl.screen);
-    app_lvgl_create_waveform_area(s_lvgl.screen);
-    app_lvgl_create_measurements(s_lvgl.screen);
-    for (uint8_t i = 0; i < 4; i++) {
-        if (s_lvgl.channel_buttons[i] != NULL) {
-            lv_obj_move_foreground(s_lvgl.channel_buttons[i]);
-        }
-    }
-
-    lv_screen_load(s_lvgl.screen);
-}
-
-/**
- * @brief Executa o loop principal do LVGL.
- *
- * @param[in] arg Argumento nao utilizado.
+ * @brief Executa continuamente timers, animações e renderização do LVGL.
  */
 static void app_lvgl_task(void *arg)
 {
     (void)arg;
-
     while (true) {
         app_lvgl_lock();
         lv_timer_handler();
@@ -1694,45 +131,38 @@ static void app_lvgl_task(void *arg)
 }
 
 /**
- * @brief Inicializa os buffers de desenho e registra o display no LVGL.
+ * @brief Registra o display RGB e seus dois framebuffers diretos no LVGL.
  *
- * @param[in] lcd Handle do driver do LCD RGB.
- * @return ESP_OK em caso de sucesso ou codigo de erro do ESP-IDF.
+ * @param[in] lcd Handle do painel RGB.
+ * @return ESP_OK em sucesso ou erro da camada LCD/LVGL.
  */
 static esp_err_t app_lvgl_display_init(wt32s3_lcd_handle_t lcd)
 {
-    size_t draw_buffer_size = WT32S3_LCD_H_RES * WT32S3_LCD_V_RES * sizeof(lv_color_t);
-    void *draw_buffer_a = NULL;
-    void *draw_buffer_b = NULL;
-    ESP_RETURN_ON_ERROR(wt32s3_lcd_get_frame_buffers(lcd, &draw_buffer_a, &draw_buffer_b), TAG, "falha ao obter framebuffers RGB");
-
+    const size_t size = WT32S3_LCD_H_RES * WT32S3_LCD_V_RES * sizeof(lv_color_t);
+    void *buffer_a = NULL;
+    void *buffer_b = NULL;
+    ESP_RETURN_ON_ERROR(wt32s3_lcd_get_frame_buffers(lcd, &buffer_a, &buffer_b), "app_lvgl", "framebuffers RGB indisponiveis");
     s_lvgl.display = lv_display_create(WT32S3_LCD_H_RES, WT32S3_LCD_V_RES);
-    ESP_RETURN_ON_FALSE(s_lvgl.display != NULL, ESP_ERR_NO_MEM, TAG, "falha ao criar display LVGL");
-
+    ESP_RETURN_ON_FALSE(s_lvgl.display != NULL, ESP_ERR_NO_MEM, "app_lvgl", "falha ao criar display LVGL");
     lv_display_set_color_format(s_lvgl.display, LV_COLOR_FORMAT_RGB565);
     lv_display_set_user_data(s_lvgl.display, lcd);
     lv_display_set_flush_cb(s_lvgl.display, app_lvgl_flush_cb);
     lv_display_set_flush_wait_cb(s_lvgl.display, app_lvgl_flush_wait_cb);
-    lv_display_set_buffers(s_lvgl.display, draw_buffer_a, draw_buffer_b, draw_buffer_size, LV_DISPLAY_RENDER_MODE_DIRECT);
-
-    const esp_lcd_rgb_panel_event_callbacks_t callbacks = {
-        .on_frame_buf_complete = app_lvgl_frame_complete_cb,
-    };
-    ESP_RETURN_ON_ERROR(esp_lcd_rgb_panel_register_event_callbacks(wt32s3_lcd_get_panel(lcd), &callbacks, NULL), TAG, "falha ao registrar callback RGB");
-    return ESP_OK;
+    lv_display_set_buffers(s_lvgl.display, buffer_a, buffer_b, size, LV_DISPLAY_RENDER_MODE_DIRECT);
+    const esp_lcd_rgb_panel_event_callbacks_t callbacks = {.on_frame_buf_complete = app_lvgl_frame_complete_cb};
+    return esp_lcd_rgb_panel_register_event_callbacks(wt32s3_lcd_get_panel(lcd), &callbacks, NULL);
 }
 
 /**
- * @brief Registra o controlador de toque como entrada de ponteiro no LVGL.
+ * @brief Registra o controlador GT911 como dispositivo de entrada LVGL.
  *
- * @param[in] touch Handle do driver GT911.
- * @return ESP_OK em caso de sucesso ou codigo de erro do ESP-IDF.
+ * @param[in] touch Handle do controlador de toque.
+ * @return ESP_OK em sucesso ou erro de memória.
  */
 static esp_err_t app_lvgl_input_init(gt911_touch_handle_t touch)
 {
     s_lvgl.input = lv_indev_create();
-    ESP_RETURN_ON_FALSE(s_lvgl.input != NULL, ESP_ERR_NO_MEM, TAG, "falha ao criar input LVGL");
-
+    ESP_RETURN_ON_FALSE(s_lvgl.input != NULL, ESP_ERR_NO_MEM, "app_lvgl", "falha ao criar input LVGL");
     lv_indev_set_type(s_lvgl.input, LV_INDEV_TYPE_POINTER);
     lv_indev_set_user_data(s_lvgl.input, touch);
     lv_indev_set_read_cb(s_lvgl.input, app_lvgl_touch_read_cb);
@@ -1740,48 +170,30 @@ static esp_err_t app_lvgl_input_init(gt911_touch_handle_t touch)
 }
 
 /**
- * @brief Inicializa o LVGL, registra display, touch e cria a tela inicial.
+ * @brief Inicializa a infraestrutura LVGL e cria a tela do osciloscópio.
  *
- * @param[in] lcd Handle do driver do LCD RGB.
- * @param[in] touch Handle do driver de touch GT911.
- * @return ESP_OK em caso de sucesso ou codigo de erro do ESP-IDF.
+ * @param[in] lcd Handle do painel RGB.
+ * @param[in] touch Handle do controlador GT911.
+ * @return ESP_OK em sucesso ou o primeiro erro encontrado.
  */
 esp_err_t app_lvgl_init(wt32s3_lcd_handle_t lcd, gt911_touch_handle_t touch)
 {
-    ESP_RETURN_ON_FALSE(lcd != NULL && touch != NULL, ESP_ERR_INVALID_ARG, TAG, "handles invalidos");
-
+    ESP_RETURN_ON_FALSE(lcd != NULL && touch != NULL, ESP_ERR_INVALID_ARG, "app_lvgl", "handles invalidos");
     s_lvgl.lcd = lcd;
     s_lvgl.touch = touch;
     s_lvgl.lock = xSemaphoreCreateMutex();
-    ESP_RETURN_ON_FALSE(s_lvgl.lock != NULL, ESP_ERR_NO_MEM, TAG, "falha ao criar mutex");
-
+    ESP_RETURN_ON_FALSE(s_lvgl.lock != NULL, ESP_ERR_NO_MEM, "app_lvgl", "falha ao criar mutex");
     lv_init();
-    ESP_RETURN_ON_ERROR(app_lvgl_display_init(lcd), TAG, "falha ao inicializar display LVGL");
-    ESP_RETURN_ON_ERROR(app_lvgl_input_init(touch), TAG, "falha ao inicializar touch LVGL");
-
-    const esp_timer_create_args_t tick_timer_args = {
-        .callback = app_lvgl_tick_cb,
-        .name = "lvgl_tick",
-    };
+    ESP_RETURN_ON_ERROR(app_lvgl_display_init(lcd), "app_lvgl", "falha ao inicializar display LVGL");
+    ESP_RETURN_ON_ERROR(app_lvgl_input_init(touch), "app_lvgl", "falha ao inicializar touch LVGL");
+    const esp_timer_create_args_t tick_args = {.callback = app_lvgl_tick_cb, .name = "lvgl_tick"};
     esp_timer_handle_t tick_timer = NULL;
-    ESP_RETURN_ON_ERROR(esp_timer_create(&tick_timer_args, &tick_timer), TAG, "falha ao criar timer LVGL");
-    ESP_RETURN_ON_ERROR(esp_timer_start_periodic(tick_timer, APP_LVGL_TICK_PERIOD_MS * 1000), TAG, "falha ao iniciar timer LVGL");
-
-#if APP_LVGL_MONITOR_HEAP_LOG == 1
-    const esp_timer_create_args_t heap_timer_args = {
-        .callback = app_lvgl_heap_log_cb,
-        .name = "lvgl_heap_log",
-    };
-    esp_timer_handle_t heap_timer = NULL;
-    ESP_RETURN_ON_ERROR(esp_timer_create(&heap_timer_args, &heap_timer), TAG, "falha ao criar timer de heap");
-    ESP_RETURN_ON_ERROR(esp_timer_start_periodic(heap_timer, APP_LVGL_HEAP_LOG_PERIOD_MS * 1000), TAG, "falha ao iniciar timer de heap");
-#endif
-
+    ESP_RETURN_ON_ERROR(esp_timer_create(&tick_args, &tick_timer), "app_lvgl", "falha ao criar tick LVGL");
+    ESP_RETURN_ON_ERROR(esp_timer_start_periodic(tick_timer, APP_LVGL_TICK_PERIOD_MS * 1000U), "app_lvgl", "falha ao iniciar tick LVGL");
     app_lvgl_lock();
-    app_lvgl_create_ui();
+    esp_err_t err = osc_create(lcd);
     app_lvgl_unlock();
-
-    BaseType_t task_created = xTaskCreate(app_lvgl_task, "lvgl", APP_LVGL_TASK_STACK_SIZE, NULL, APP_LVGL_TASK_PRIORITY, &s_lvgl.task);
-    ESP_RETURN_ON_FALSE(task_created == pdPASS, ESP_ERR_NO_MEM, TAG, "falha ao criar task LVGL");
-    return ESP_OK;
+    ESP_RETURN_ON_ERROR(err, "app_lvgl", "falha ao criar osciloscopio");
+    BaseType_t created = xTaskCreate(app_lvgl_task, "lvgl", APP_LVGL_TASK_STACK_SIZE, NULL, APP_LVGL_TASK_PRIORITY, &s_lvgl.task);
+    return created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
