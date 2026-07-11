@@ -42,21 +42,12 @@
 #define OSC_CHANNEL_INFO_GAP 4
 #define OSC_CHANNEL_INFO_WIDTH ((OSC_SCREEN_WIDTH - OSC_CHANNEL_INFO_GAP) / 2)
 #define OSC_CHART_POINT_COUNT OSC_WAVEFORM_INNER_WIDTH
-#define OSC_CHART_TIMER_MS 20
 #define OSC_HISTORY_BYTES_PER_CHANNEL (500U * 1024U)
 #define OSC_HISTORY_SAMPLE_COUNT (OSC_HISTORY_BYTES_PER_CHANNEL / sizeof(uint16_t))
-#define OSC_SIM_SAMPLE_RATE_HZ 20000U
+#define OSC_DEFAULT_INPUT_SAMPLE_RATE_HZ 2000U
 #define OSC_HEAP_LOG_PERIOD_MS 5000
 #define OSC_ADC_CENTER 1024
-#define OSC_ADC_DIV_VALUE 256
-#define OSC_CH1_LOW (OSC_ADC_CENTER - (2 * OSC_ADC_DIV_VALUE))
-#define OSC_CH1_HIGH (OSC_ADC_CENTER + (2 * OSC_ADC_DIV_VALUE))
-#define OSC_CH2_LOW (OSC_ADC_CENTER - OSC_ADC_DIV_VALUE)
-#define OSC_CH2_HIGH (OSC_ADC_CENTER + (3 * OSC_ADC_DIV_VALUE))
-#define OSC_CH3_OFFSET OSC_ADC_DIV_VALUE
-#define OSC_CH4_OFFSET (OSC_ADC_DIV_VALUE * 2)
-#define OSC_PHASE_OFFSET_US (OSC_SQUARE_PERIOD_US / 12)
-#define OSC_SQUARE_PERIOD_US 200000
+#define OSC_ADC_COUNTS_PER_DIV 256
 #define OSC_DEFAULT_TIME_BASE_US_PER_DIV 100000
 #define OSC_DEFAULT_VOLTAGE_BASE_MV_PER_DIV 50
 #define OSC_TIME_DIV_COUNT 10
@@ -153,7 +144,7 @@ typedef struct {
     uint8_t backlight_percent;
     uint32_t time_base_us_per_div;
     uint32_t voltage_base_mv_per_div;
-    uint32_t square_phase_us;
+    uint32_t input_sample_rate_hz;
     uint16_t *waveform_samples[4];
     uint32_t waveform_sample_count;
     uint32_t waveform_sample_head;
@@ -226,7 +217,7 @@ static void osc_apply_theme(void)
 }
 
 /**
- * @brief Atualiza a base de tempo usada pelo sinal simulado.
+ * @brief Atualiza a base de tempo usada para apresentar as amostras recebidas.
  *
  * @param[in] event Evento LVGL do dropdown de base de tempo.
  */
@@ -541,20 +532,6 @@ static void osc_create_top_menu(lv_obj_t *parent)
     osc_create_menu_item(menu, "Cursores", "Off\nTempo\nTensao", 0, 0x37474f, osc_cursor_mode_event_cb);
     osc_create_menu_item(menu, "Brilho", "On\nOff", 1, 0x546e7a, osc_backlight_dropdown_event_cb);
     osc_create_menu_item(menu, "Tema", "Escuro\nClaro", 0, 0x263238, osc_theme_event_cb);
-}
-
-/**
- * @brief Gera o estado da onda quadrada e avanca o tempo do sinal.
- *
- * @param[in] elapsed_us Tempo simulado desde a ultima amostra.
- * @return true para nivel alto, false para nivel baixo.
- */
-static bool osc_next_square_state(uint32_t elapsed_us)
-{
-    const uint32_t half_period_us = OSC_SQUARE_PERIOD_US / 2;
-    const uint32_t phase = (s_lvgl.square_phase_us / half_period_us) % 2;
-    s_lvgl.square_phase_us = (s_lvgl.square_phase_us + elapsed_us) % OSC_SQUARE_PERIOD_US;
-    return phase == 0;
 }
 
 /**
@@ -977,10 +954,10 @@ static uint16_t osc_waveform_get_sample(uint8_t channel, uint32_t visual_index)
 /**
  * @brief Insere uma amostra multicanal no historico circular da waveform.
  *
- * Esta e a fronteira entre aquisicao e interface: o gerador simulado usa a
- * mesma entrada que sera usada futuramente pelo receptor SPI do ADC.
+ * Esta é a fronteira entre aquisição e interface. Os frames devem chegar pelo
+ * consumidor da fila SPSC, executado no core 1.
  */
-static void osc_waveform_push_samples(const int32_t samples[4])
+static void osc_waveform_push_samples(const uint16_t samples[4])
 {
     uint32_t write_index;
     if (s_lvgl.waveform_sample_count < OSC_HISTORY_SAMPLE_COUNT) {
@@ -992,7 +969,7 @@ static void osc_waveform_push_samples(const int32_t samples[4])
     }
 
     for (uint8_t channel = 0; channel < 4; channel++) {
-        uint16_t sample = (uint16_t)samples[channel];
+        uint16_t sample = samples[channel];
         if (sample > (OSC_ADC_CENTER * 2)) {
             sample = OSC_ADC_CENTER * 2;
         }
@@ -1002,7 +979,7 @@ static void osc_waveform_push_samples(const int32_t samples[4])
 
 static uint32_t osc_waveform_visible_samples(void)
 {
-    uint64_t samples = ((uint64_t)s_lvgl.time_base_us_per_div * OSC_TIME_DIV_COUNT * OSC_SIM_SAMPLE_RATE_HZ) / 1000000U;
+    uint64_t samples = ((uint64_t)s_lvgl.time_base_us_per_div * OSC_TIME_DIV_COUNT * s_lvgl.input_sample_rate_hz) / 1000000U;
     if (samples < 2) {
         samples = 2;
     } else if (samples > OSC_HISTORY_SAMPLE_COUNT) {
@@ -1263,49 +1240,6 @@ static void osc_waveform_reset(void)
 }
 
 /**
- * @brief Atualiza a waveform diretamente no framebuffer, sem usar lv_chart.
- *
- * @param[in] timer Timer LVGL que controla a simulacao.
- */
-static void osc_chart_timer_cb(lv_timer_t *timer)
-{
-    (void)timer;
-
-    if (s_lvgl.waveform_renderer == NULL) {
-        return;
-    }
-    if (s_lvgl.paused) {
-        return;
-    }
-
-    bool any_channel_visible = false;
-    for (uint8_t channel = 0; channel < 4; channel++) {
-        any_channel_visible |= s_lvgl.channel_visible[channel];
-    }
-    if (!any_channel_visible) {
-        return;
-    }
-
-    const uint32_t points_to_add = (OSC_CHART_TIMER_MS * OSC_SIM_SAMPLE_RATE_HZ) / 1000U;
-    const uint32_t sample_time_us = 1000000U / OSC_SIM_SAMPLE_RATE_HZ;
-
-    for (uint32_t i = 0; i < points_to_add; i++) {
-        const uint32_t phase_us = s_lvgl.square_phase_us;
-        const bool high = osc_next_square_state(sample_time_us);
-        const bool ch3_high = ((phase_us + OSC_PHASE_OFFSET_US) % OSC_SQUARE_PERIOD_US) < (OSC_SQUARE_PERIOD_US / 2);
-        const bool ch4_high = ((phase_us + OSC_SQUARE_PERIOD_US - OSC_PHASE_OFFSET_US) % OSC_SQUARE_PERIOD_US) < (OSC_SQUARE_PERIOD_US / 2);
-        const int32_t ch1_sample = high ? OSC_CH1_HIGH : OSC_CH1_LOW;
-        const int32_t ch2_sample = high ? OSC_CH2_HIGH : OSC_CH2_LOW;
-        const int32_t ch3_sample = (ch3_high ? OSC_CH1_HIGH : OSC_CH1_LOW) - OSC_CH3_OFFSET;
-        const int32_t ch4_sample = (ch4_high ? OSC_CH1_HIGH : OSC_CH1_LOW) - OSC_CH4_OFFSET;
-        const int32_t samples[] = {ch1_sample, ch2_sample, ch3_sample, ch4_sample};
-        osc_waveform_push_samples(samples);
-    }
-    osc_update_buffer_label();
-    lv_obj_invalidate(s_lvgl.waveform_renderer);
-}
-
-/**
  * @brief Cria o objeto que desenha a waveform diretamente no framebuffer RGB565.
  *
  * @param[in] parent Tela principal.
@@ -1343,10 +1277,9 @@ static void osc_create_waveform_renderer(lv_obj_t *parent)
 
     s_lvgl.time_base_us_per_div = OSC_DEFAULT_TIME_BASE_US_PER_DIV;
     s_lvgl.voltage_base_mv_per_div = OSC_DEFAULT_VOLTAGE_BASE_MV_PER_DIV;
-    s_lvgl.square_phase_us = 0;
+    s_lvgl.input_sample_rate_hz = OSC_DEFAULT_INPUT_SAMPLE_RATE_HZ;
     osc_waveform_reset();
     s_lvgl.paused = false;
-    lv_timer_create(osc_chart_timer_cb, OSC_CHART_TIMER_MS, NULL);
 }
 
 /**
@@ -1416,7 +1349,7 @@ static void osc_create_measurement_row(lv_obj_t *parent, uint8_t channel_index, 
 
 static uint32_t osc_counts_to_mv(uint32_t counts)
 {
-    return (counts * s_lvgl.voltage_base_mv_per_div) / OSC_ADC_DIV_VALUE;
+    return (counts * s_lvgl.voltage_base_mv_per_div) / OSC_ADC_COUNTS_PER_DIV;
 }
 
 static void osc_clear_measurements(uint8_t channel)
@@ -1460,7 +1393,7 @@ static void osc_update_frequency_duty(uint8_t channel, uint32_t first_sample, ui
     for (uint32_t index = previous_rising; index < last_rising; index++) {
         high_samples += osc_waveform_get_sample(channel, first_sample + index) >= OSC_ADC_CENTER;
     }
-    const float frequency_hz = (float)OSC_SIM_SAMPLE_RATE_HZ / period_samples;
+    const float frequency_hz = (float)s_lvgl.input_sample_rate_hz / period_samples;
     const uint32_t duty_percent = (high_samples * 100U) / period_samples;
     lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][3], "FREQ %.1fHz", (double)frequency_hz);
     lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][4], "DUTY %u%%", (unsigned)duty_percent);
@@ -1555,5 +1488,39 @@ esp_err_t osc_create(wt32s3_lcd_handle_t lcd)
     }
 
     lv_screen_load(s_lvgl.screen);
+    return ESP_OK;
+}
+
+/**
+ * @brief Define a taxa de frames recebidos pela entrada de aquisição.
+ *
+ * @param[in] sample_rate_hz Taxa de frames por segundo do ADC.
+ * @return @c ESP_OK em caso de sucesso ou @c ESP_ERR_INVALID_ARG se a taxa for zero.
+ */
+esp_err_t osc_set_input_sample_rate(uint32_t sample_rate_hz)
+{
+    ESP_RETURN_ON_FALSE(sample_rate_hz > 0, ESP_ERR_INVALID_ARG, TAG, "taxa de amostragem invalida");
+    s_lvgl.input_sample_rate_hz = sample_rate_hz;
+    if (s_lvgl.waveform_renderer != NULL) {
+        lv_obj_invalidate(s_lvgl.waveform_renderer);
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief Insere um frame ADC de quatro canais no histórico do osciloscópio.
+ *
+ * @param[in] samples Amostras na ordem CH1, CH2, CH3 e CH4.
+ * @return @c ESP_OK em caso de sucesso ou @c ESP_ERR_INVALID_ARG se @p samples for nulo.
+ */
+esp_err_t osc_push_frame(const uint16_t samples[4])
+{
+    ESP_RETURN_ON_FALSE(samples != NULL, ESP_ERR_INVALID_ARG, TAG, "frame ADC invalido");
+    if (s_lvgl.paused || s_lvgl.waveform_renderer == NULL) {
+        return ESP_OK;
+    }
+    osc_waveform_push_samples(samples);
+    osc_update_buffer_label();
+    lv_obj_invalidate(s_lvgl.waveform_renderer);
     return ESP_OK;
 }
