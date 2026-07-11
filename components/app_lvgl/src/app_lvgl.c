@@ -1,5 +1,7 @@
 #include "app_lvgl.h"
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 #include "esp_attr.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
@@ -11,6 +13,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#include "draw/lv_draw.h"
 
 #define APP_LVGL_TICK_PERIOD_MS 1
 #define APP_LVGL_TASK_STACK_SIZE 8192
@@ -49,6 +52,9 @@
 #define APP_LVGL_CH1_HIGH (APP_LVGL_ADC_CENTER + (2 * APP_LVGL_ADC_DIV_VALUE))
 #define APP_LVGL_CH2_LOW (APP_LVGL_ADC_CENTER - APP_LVGL_ADC_DIV_VALUE)
 #define APP_LVGL_CH2_HIGH (APP_LVGL_ADC_CENTER + (3 * APP_LVGL_ADC_DIV_VALUE))
+#define APP_LVGL_CH3_OFFSET APP_LVGL_ADC_DIV_VALUE
+#define APP_LVGL_CH4_OFFSET (APP_LVGL_ADC_DIV_VALUE * 2)
+#define APP_LVGL_PHASE_OFFSET_US (APP_LVGL_SQUARE_PERIOD_US / 12)
 #define APP_LVGL_SQUARE_PERIOD_US 200000
 #define APP_LVGL_DEFAULT_TIME_BASE_US_PER_DIV 100000
 #define APP_LVGL_DEFAULT_VOLTAGE_BASE_MV_PER_DIV 50
@@ -123,10 +129,8 @@ typedef struct {
     lv_display_t *display;
     lv_indev_t *input;
     lv_obj_t *screen;
-    lv_obj_t *grid_canvas;
-    void *grid_canvas_buffer;
+    lv_obj_t *waveform_renderer;
     lv_obj_t *channel_buttons[4];
-    lv_obj_t *chart;
     lv_obj_t *cursor_lines[2];
     lv_obj_t *cursor_label;
     lv_obj_t *trigger_line;
@@ -134,8 +138,6 @@ typedef struct {
     lv_timer_t *trigger_hide_timer;
     lv_obj_t *backlight_slider;
     lv_obj_t *backlight_label;
-    lv_chart_series_t *ch1_series;
-    lv_chart_series_t *ch2_series;
     bool channel_visible[4];
     app_lvgl_cursor_mode_t cursor_mode;
     app_lvgl_theme_t theme;
@@ -144,10 +146,10 @@ typedef struct {
     uint8_t backlight_percent;
     uint32_t time_base_us_per_div;
     uint32_t voltage_base_mv_per_div;
-    uint32_t chart_sample_index;
     uint32_t square_phase_us;
     uint32_t chart_point_accumulator_q8;
-    bool chart_filled;
+    uint16_t waveform_samples[4][APP_LVGL_CHART_POINT_COUNT];
+    uint16_t waveform_sample_count;
     SemaphoreHandle_t lock;
     TaskHandle_t task;
 } app_lvgl_context_t;
@@ -282,7 +284,7 @@ static void app_lvgl_touch_read_cb(lv_indev_t *input, lv_indev_data_t *data)
 
 static void app_lvgl_update_cursor_label(void);
 static void app_lvgl_reset_cursor_positions(void);
-static void app_lvgl_draw_grid_canvas(lv_obj_t *canvas);
+static void app_lvgl_waveform_reset(void);
 
 static uint32_t app_lvgl_theme_waveform_bg(void)
 {
@@ -306,8 +308,8 @@ static uint32_t app_lvgl_theme_overlay_text(void)
 
 static void app_lvgl_apply_theme(void)
 {
-    if (s_lvgl.grid_canvas != NULL) {
-        app_lvgl_draw_grid_canvas(s_lvgl.grid_canvas);
+    if (s_lvgl.waveform_renderer != NULL) {
+        lv_obj_invalidate(s_lvgl.waveform_renderer);
     }
 
     for (uint8_t i = 0; i < 2; i++) {
@@ -337,6 +339,11 @@ static void app_lvgl_time_base_event_cb(lv_event_t *event)
     if (selected < (sizeof(APP_LVGL_TIME_BASE_US_PER_DIV) / sizeof(APP_LVGL_TIME_BASE_US_PER_DIV[0]))) {
         s_lvgl.time_base_us_per_div = APP_LVGL_TIME_BASE_US_PER_DIV[selected];
         s_lvgl.chart_point_accumulator_q8 = 0;
+        s_lvgl.square_phase_us = 0;
+        app_lvgl_waveform_reset();
+        if (s_lvgl.waveform_renderer != NULL) {
+            lv_obj_invalidate(s_lvgl.waveform_renderer);
+        }
         app_lvgl_update_cursor_label();
     }
 }
@@ -678,15 +685,9 @@ static void app_lvgl_channel_button_event_cb(lv_event_t *event)
     }
 
     s_lvgl.channel_visible[channel_index] = !s_lvgl.channel_visible[channel_index];
-    if (channel_index == 0 && s_lvgl.ch1_series != NULL) {
-        lv_chart_hide_series(s_lvgl.chart, s_lvgl.ch1_series, !s_lvgl.channel_visible[channel_index]);
-    } else if (channel_index == 1 && s_lvgl.ch2_series != NULL) {
-        lv_chart_hide_series(s_lvgl.chart, s_lvgl.ch2_series, !s_lvgl.channel_visible[channel_index]);
-    }
-
     app_lvgl_update_channel_button(channel_index);
-    if (s_lvgl.chart != NULL) {
-        lv_chart_refresh(s_lvgl.chart);
+    if (s_lvgl.waveform_renderer != NULL) {
+        lv_obj_invalidate(s_lvgl.waveform_renderer);
     }
 }
 
@@ -700,7 +701,7 @@ static void app_lvgl_create_channel_buttons(lv_obj_t *parent)
     for (uint8_t i = 0; i < 4; i++) {
         lv_obj_t *button = lv_button_create(parent);
         s_lvgl.channel_buttons[i] = button;
-        s_lvgl.channel_visible[i] = i < 2;
+        s_lvgl.channel_visible[i] = true;
         lv_obj_set_size(button, APP_LVGL_CHANNEL_BUTTON_WIDTH, APP_LVGL_CHANNEL_BUTTON_HEIGHT);
         lv_obj_set_pos(button,
                        APP_LVGL_CHANNEL_BUTTON_GAP,
@@ -857,8 +858,8 @@ static void app_lvgl_update_cursor_label(void)
         lv_label_set_text_fmt(s_lvgl.cursor_label, "dV %s", voltage_text);
     }
 
-    if (s_lvgl.grid_canvas != NULL) {
-        lv_obj_align_to(s_lvgl.cursor_label, s_lvgl.grid_canvas, LV_ALIGN_BOTTOM_RIGHT, -8, -8);
+    if (s_lvgl.waveform_renderer != NULL) {
+        lv_obj_align_to(s_lvgl.cursor_label, s_lvgl.waveform_renderer, LV_ALIGN_BOTTOM_RIGHT, -8, -8);
     }
     lv_obj_move_foreground(s_lvgl.cursor_label);
     lv_obj_move_foreground(s_lvgl.cursor_lines[0]);
@@ -944,8 +945,8 @@ static void app_lvgl_create_cursors(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(s_lvgl.cursor_label, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_text_font(s_lvgl.cursor_label, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_text(s_lvgl.cursor_label, "");
-    if (s_lvgl.grid_canvas != NULL) {
-        lv_obj_align_to(s_lvgl.cursor_label, s_lvgl.grid_canvas, LV_ALIGN_BOTTOM_RIGHT, -8, -8);
+    if (s_lvgl.waveform_renderer != NULL) {
+        lv_obj_align_to(s_lvgl.cursor_label, s_lvgl.waveform_renderer, LV_ALIGN_BOTTOM_RIGHT, -8, -8);
     }
     lv_obj_add_flag(s_lvgl.cursor_label, LV_OBJ_FLAG_HIDDEN);
 }
@@ -1047,7 +1048,132 @@ static uint32_t app_lvgl_chart_points_per_tick(void)
 }
 
 /**
- * @brief Atualiza o chart: primeiro preenche da esquerda para direita, depois desloca como esteira.
+ * @brief Converte uma amostra ADC para a coordenada vertical da waveform.
+ */
+static uint16_t app_lvgl_waveform_sample_to_y(uint16_t sample)
+{
+    if (sample > (APP_LVGL_ADC_CENTER * 2)) {
+        sample = APP_LVGL_ADC_CENTER * 2;
+    }
+    return (uint16_t)((((APP_LVGL_ADC_CENTER * 2) - sample) * (APP_LVGL_WAVEFORM_INNER_HEIGHT - 1)) /
+                      (APP_LVGL_ADC_CENTER * 2));
+}
+
+static void app_lvgl_waveform_set_pixel(uint16_t *framebuffer, uint32_t stride_px, const lv_area_t *buffer_area, const lv_area_t *clip_area, int32_t x, int32_t y, uint16_t color)
+{
+    if (x >= APP_LVGL_WAVEFORM_INNER_X && x < APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH &&
+        y >= APP_LVGL_WAVEFORM_INNER_Y && y < APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT &&
+        x >= clip_area->x1 && x <= clip_area->x2 && y >= clip_area->y1 && y <= clip_area->y2) {
+        framebuffer[((y - buffer_area->y1) * stride_px) + x - buffer_area->x1] = color;
+    }
+}
+
+static void app_lvgl_waveform_draw_line(uint16_t *framebuffer, uint32_t stride_px, const lv_area_t *buffer_area, const lv_area_t *clip_area, int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t color)
+{
+    int32_t dx = abs(x1 - x0);
+    int32_t sx = x0 < x1 ? 1 : -1;
+    int32_t dy = -abs(y1 - y0);
+    int32_t sy = y0 < y1 ? 1 : -1;
+    int32_t error = dx + dy;
+
+    while (true) {
+        app_lvgl_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, x0, y0, color);
+        if (x0 == x1 && y0 == y1) {
+            break;
+        }
+        const int32_t twice_error = 2 * error;
+        if (twice_error >= dy) {
+            error += dy;
+            x0 += sx;
+        }
+        if (twice_error <= dx) {
+            error += dx;
+            y0 += sy;
+        }
+    }
+}
+
+/**
+ * @brief Desenha diretamente no framebuffer RGB565 pertencente a camada LVGL atual.
+ *
+ * O objeto fica abaixo dos cursores e controles LVGL. Assim, os objetos sobrepostos
+ * continuam sendo compostos normalmente depois deste callback.
+ */
+static void app_lvgl_waveform_draw_event_cb(lv_event_t *event)
+{
+    lv_layer_t *layer = lv_event_get_layer(event);
+    if (layer == NULL || layer->draw_buf == NULL || layer->draw_buf->data == NULL) {
+        return;
+    }
+
+    uint16_t *framebuffer = (uint16_t *)layer->draw_buf->data;
+    const uint32_t stride_px = layer->draw_buf->header.stride / sizeof(uint16_t);
+    const lv_area_t *clip_area = &layer->_clip_area;
+    const lv_area_t *buffer_area = &layer->buf_area;
+    const uint16_t background = lv_color_to_u16(lv_color_hex(app_lvgl_theme_waveform_bg()));
+    const uint16_t dot = lv_color_to_u16(lv_color_hex(app_lvgl_theme_grid_dot()));
+    const uint16_t center = lv_color_to_u16(lv_color_hex(app_lvgl_theme_grid_center()));
+
+    const int32_t render_x1 = clip_area->x1 > APP_LVGL_WAVEFORM_INNER_X ? clip_area->x1 : APP_LVGL_WAVEFORM_INNER_X;
+    const int32_t render_y1 = clip_area->y1 > APP_LVGL_WAVEFORM_INNER_Y ? clip_area->y1 : APP_LVGL_WAVEFORM_INNER_Y;
+    const int32_t render_x2 = clip_area->x2 < APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH - 1 ?
+                              clip_area->x2 : APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH - 1;
+    const int32_t render_y2 = clip_area->y2 < APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT - 1 ?
+                              clip_area->y2 : APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT - 1;
+    for (int32_t y = render_y1; y <= render_y2; y++) {
+        uint16_t *row = framebuffer + ((y - buffer_area->y1) * stride_px) + render_x1 - buffer_area->x1;
+        for (int32_t x = render_x1; x <= render_x2; x++) {
+            *row++ = background;
+        }
+    }
+
+    for (int32_t horizontal_index = 1; horizontal_index < 8; horizontal_index++) {
+        if (horizontal_index != 4) {
+            const int32_t y = APP_LVGL_WAVEFORM_INNER_Y + (horizontal_index * 46);
+            for (int32_t x = APP_LVGL_WAVEFORM_INNER_X; x < APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH; x += 8) {
+                app_lvgl_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, x, y, dot);
+            }
+        }
+    }
+    for (int32_t vertical_index = 1; vertical_index < 10; vertical_index++) {
+        if (vertical_index != 5) {
+            const int32_t x = APP_LVGL_WAVEFORM_INNER_X + (vertical_index * 70);
+            for (int32_t y = APP_LVGL_WAVEFORM_INNER_Y; y < APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT; y += 8) {
+                app_lvgl_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, x, y, dot);
+            }
+        }
+    }
+    for (int32_t x = APP_LVGL_WAVEFORM_INNER_X; x < APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH; x += 4) {
+        app_lvgl_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, x, APP_LVGL_WAVEFORM_INNER_Y + (APP_LVGL_WAVEFORM_INNER_HEIGHT / 2), center);
+    }
+    for (int32_t y = APP_LVGL_WAVEFORM_INNER_Y; y < APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT; y += 4) {
+        app_lvgl_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, APP_LVGL_WAVEFORM_INNER_X + (APP_LVGL_WAVEFORM_INNER_WIDTH / 2), y, center);
+    }
+
+    for (uint16_t sample_index = 1; sample_index < s_lvgl.waveform_sample_count; sample_index++) {
+        const int32_t x0 = APP_LVGL_WAVEFORM_INNER_X + sample_index - 1;
+        const int32_t x1 = APP_LVGL_WAVEFORM_INNER_X + sample_index;
+        for (uint8_t channel = 0; channel < 4; channel++) {
+            if (s_lvgl.channel_visible[channel]) {
+                const uint16_t color = lv_color_to_u16(lv_color_hex(APP_LVGL_CHANNEL_COLORS[channel]));
+                app_lvgl_waveform_draw_line(framebuffer, stride_px, buffer_area, clip_area,
+                                             x0, APP_LVGL_WAVEFORM_INNER_Y + s_lvgl.waveform_samples[channel][sample_index - 1],
+                                             x1, APP_LVGL_WAVEFORM_INNER_Y + s_lvgl.waveform_samples[channel][sample_index], color);
+            }
+        }
+    }
+}
+
+/**
+ * @brief Limpa o estado da varredura incremental da waveform.
+ */
+static void app_lvgl_waveform_reset(void)
+{
+    s_lvgl.waveform_sample_count = 0;
+}
+
+/**
+ * @brief Atualiza a waveform diretamente no framebuffer, sem usar lv_chart.
  *
  * @param[in] timer Timer LVGL que controla a simulacao.
  */
@@ -1055,10 +1181,18 @@ static void app_lvgl_chart_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
 
-    if (s_lvgl.chart == NULL || s_lvgl.ch1_series == NULL || s_lvgl.ch2_series == NULL) {
+    if (s_lvgl.waveform_renderer == NULL) {
         return;
     }
     if (s_lvgl.paused) {
+        return;
+    }
+
+    bool any_channel_visible = false;
+    for (uint8_t channel = 0; channel < 4; channel++) {
+        any_channel_visible |= s_lvgl.channel_visible[channel];
+    }
+    if (!any_channel_visible) {
         return;
     }
 
@@ -1066,141 +1200,52 @@ static void app_lvgl_chart_timer_cb(lv_timer_t *timer)
     const uint32_t sample_time_us = (s_lvgl.time_base_us_per_div * APP_LVGL_TIME_DIV_COUNT) / APP_LVGL_CHART_POINT_COUNT;
 
     for (uint32_t i = 0; i < points_to_add; i++) {
+        const uint32_t phase_us = s_lvgl.square_phase_us;
         const bool high = app_lvgl_next_square_state(sample_time_us);
+        const bool ch3_high = ((phase_us + APP_LVGL_PHASE_OFFSET_US) % APP_LVGL_SQUARE_PERIOD_US) < (APP_LVGL_SQUARE_PERIOD_US / 2);
+        const bool ch4_high = ((phase_us + APP_LVGL_SQUARE_PERIOD_US - APP_LVGL_PHASE_OFFSET_US) % APP_LVGL_SQUARE_PERIOD_US) < (APP_LVGL_SQUARE_PERIOD_US / 2);
         const int32_t ch1_sample = high ? APP_LVGL_CH1_HIGH : APP_LVGL_CH1_LOW;
         const int32_t ch2_sample = high ? APP_LVGL_CH2_HIGH : APP_LVGL_CH2_LOW;
-        if (!s_lvgl.chart_filled) {
-            lv_chart_set_series_value_by_id(s_lvgl.chart, s_lvgl.ch1_series, s_lvgl.chart_sample_index, ch1_sample);
-            lv_chart_set_series_value_by_id(s_lvgl.chart, s_lvgl.ch2_series, s_lvgl.chart_sample_index, ch2_sample);
-            s_lvgl.chart_sample_index++;
-            if (s_lvgl.chart_sample_index >= APP_LVGL_CHART_POINT_COUNT) {
-                s_lvgl.chart_filled = true;
-                lv_chart_set_update_mode(s_lvgl.chart, LV_CHART_UPDATE_MODE_SHIFT);
+        const int32_t ch3_sample = (ch3_high ? APP_LVGL_CH1_HIGH : APP_LVGL_CH1_LOW) - APP_LVGL_CH3_OFFSET;
+        const int32_t ch4_sample = (ch4_high ? APP_LVGL_CH1_HIGH : APP_LVGL_CH1_LOW) - APP_LVGL_CH4_OFFSET;
+        const int32_t samples[] = {ch1_sample, ch2_sample, ch3_sample, ch4_sample};
+        if (s_lvgl.waveform_sample_count < APP_LVGL_CHART_POINT_COUNT) {
+            for (uint8_t channel = 0; channel < 4; channel++) {
+                s_lvgl.waveform_samples[channel][s_lvgl.waveform_sample_count] = app_lvgl_waveform_sample_to_y(samples[channel]);
             }
+            s_lvgl.waveform_sample_count++;
         } else {
-            lv_chart_set_next_value(s_lvgl.chart, s_lvgl.ch1_series, ch1_sample);
-            lv_chart_set_next_value(s_lvgl.chart, s_lvgl.ch2_series, ch2_sample);
+            for (uint8_t channel = 0; channel < 4; channel++) {
+                memmove(s_lvgl.waveform_samples[channel], s_lvgl.waveform_samples[channel] + 1,
+                        (APP_LVGL_CHART_POINT_COUNT - 1) * sizeof(s_lvgl.waveform_samples[channel][0]));
+                s_lvgl.waveform_samples[channel][APP_LVGL_CHART_POINT_COUNT - 1] = app_lvgl_waveform_sample_to_y(samples[channel]);
+            }
         }
     }
-
-    lv_chart_refresh(s_lvgl.chart);
+    lv_obj_invalidate(s_lvgl.waveform_renderer);
 }
 
 /**
- * @brief Cria o chart transparente para desenhar o sinal simulado.
+ * @brief Cria o objeto que desenha a waveform diretamente no framebuffer RGB565.
  *
  * @param[in] parent Tela principal.
  */
-static void app_lvgl_create_waveform_chart(lv_obj_t *parent)
+static void app_lvgl_create_waveform_renderer(lv_obj_t *parent)
 {
-    s_lvgl.chart = lv_chart_create(parent);
-    lv_obj_remove_style_all(s_lvgl.chart);
-    lv_obj_set_size(s_lvgl.chart, APP_LVGL_WAVEFORM_INNER_WIDTH, APP_LVGL_WAVEFORM_INNER_HEIGHT);
-    lv_obj_set_pos(s_lvgl.chart, APP_LVGL_WAVEFORM_INNER_X, APP_LVGL_WAVEFORM_INNER_Y);
-    lv_obj_set_style_bg_opa(s_lvgl.chart, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_lvgl.chart, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_lvgl.chart, 0, LV_PART_MAIN);
-    lv_obj_set_style_line_width(s_lvgl.chart, 2, LV_PART_ITEMS);
-    lv_obj_set_style_width(s_lvgl.chart, 0, LV_PART_INDICATOR);
-    lv_obj_set_style_height(s_lvgl.chart, 0, LV_PART_INDICATOR);
+    s_lvgl.waveform_renderer = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_lvgl.waveform_renderer);
+    lv_obj_set_size(s_lvgl.waveform_renderer, APP_LVGL_WAVEFORM_INNER_WIDTH, APP_LVGL_WAVEFORM_INNER_HEIGHT);
+    lv_obj_set_pos(s_lvgl.waveform_renderer, APP_LVGL_WAVEFORM_INNER_X, APP_LVGL_WAVEFORM_INNER_Y);
+    lv_obj_clear_flag(s_lvgl.waveform_renderer, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_lvgl.waveform_renderer, app_lvgl_waveform_draw_event_cb, LV_EVENT_DRAW_MAIN, NULL);
 
-    lv_chart_set_type(s_lvgl.chart, LV_CHART_TYPE_LINE);
-    lv_chart_set_point_count(s_lvgl.chart, APP_LVGL_CHART_POINT_COUNT);
-    lv_chart_set_axis_range(s_lvgl.chart, LV_CHART_AXIS_PRIMARY_Y, 0, APP_LVGL_ADC_CENTER * 2);
-    lv_chart_set_div_line_count(s_lvgl.chart, 0, 0);
-    lv_chart_set_update_mode(s_lvgl.chart, LV_CHART_UPDATE_MODE_CIRCULAR);
-
-    s_lvgl.ch1_series = lv_chart_add_series(s_lvgl.chart, lv_color_hex(APP_LVGL_CHANNEL_COLORS[0]), LV_CHART_AXIS_PRIMARY_Y);
-    s_lvgl.ch2_series = lv_chart_add_series(s_lvgl.chart, lv_color_hex(APP_LVGL_CHANNEL_COLORS[1]), LV_CHART_AXIS_PRIMARY_Y);
-    if (s_lvgl.ch1_series != NULL) {
-        lv_chart_set_all_values(s_lvgl.chart, s_lvgl.ch1_series, LV_CHART_POINT_NONE);
-    }
-    if (s_lvgl.ch2_series != NULL) {
-        lv_chart_set_all_values(s_lvgl.chart, s_lvgl.ch2_series, LV_CHART_POINT_NONE);
-    }
-
-    s_lvgl.chart_sample_index = 0;
     s_lvgl.time_base_us_per_div = APP_LVGL_DEFAULT_TIME_BASE_US_PER_DIV;
     s_lvgl.voltage_base_mv_per_div = APP_LVGL_DEFAULT_VOLTAGE_BASE_MV_PER_DIV;
     s_lvgl.square_phase_us = 0;
     s_lvgl.chart_point_accumulator_q8 = 0;
-    s_lvgl.chart_filled = false;
+    app_lvgl_waveform_reset();
     s_lvgl.paused = false;
     lv_timer_create(app_lvgl_chart_timer_cb, APP_LVGL_CHART_TIMER_MS, NULL);
-}
-
-/**
- * @brief Desenha a grade pontilhada em um canvas unico.
- *
- * @param[in] canvas Canvas da area util da waveform.
- */
-static void app_lvgl_draw_grid_canvas(lv_obj_t *canvas)
-{
-    const int32_t width = APP_LVGL_WAVEFORM_INNER_WIDTH;
-    const int32_t height = APP_LVGL_WAVEFORM_INNER_HEIGHT;
-    const int32_t center_x = width / 2;
-    const int32_t center_y = height / 2;
-
-    lv_canvas_fill_bg(canvas, lv_color_hex(app_lvgl_theme_waveform_bg()), LV_OPA_COVER);
-
-    for (int32_t horizontal_index = 1; horizontal_index < 8; horizontal_index++) {
-        if (horizontal_index == 4) {
-            continue;
-        }
-        const int32_t y = horizontal_index * 46;
-        if (y < 0 || y >= height) {
-            continue;
-        }
-        for (int32_t x = 0; x < width; x += 8) {
-            lv_canvas_set_px(canvas, x, y, lv_color_hex(app_lvgl_theme_grid_dot()), LV_OPA_COVER);
-        }
-    }
-
-    for (int32_t vertical_index = 1; vertical_index < 10; vertical_index++) {
-        if (vertical_index == 5) {
-            continue;
-        }
-        const int32_t x = vertical_index * 70;
-        if (x < 0 || x >= width) {
-            continue;
-        }
-        for (int32_t y = 0; y < height; y += 8) {
-            lv_canvas_set_px(canvas, x, y, lv_color_hex(app_lvgl_theme_grid_dot()), LV_OPA_COVER);
-        }
-    }
-
-    for (int32_t x = 0; x < width; x += 4) {
-        lv_canvas_set_px(canvas, x, center_y, lv_color_hex(app_lvgl_theme_grid_center()), LV_OPA_COVER);
-    }
-
-    for (int32_t y = 0; y < height; y += 4) {
-        lv_canvas_set_px(canvas, center_x, y, lv_color_hex(app_lvgl_theme_grid_center()), LV_OPA_COVER);
-    }
-}
-
-/**
- * @brief Cria o canvas da grade da area util.
- *
- * @param[in] parent Tela principal.
- */
-static void app_lvgl_create_grid_canvas(lv_obj_t *parent)
-{
-    const size_t canvas_size = APP_LVGL_WAVEFORM_INNER_WIDTH * APP_LVGL_WAVEFORM_INNER_HEIGHT * sizeof(lv_color_t);
-    s_lvgl.grid_canvas_buffer = heap_caps_malloc(canvas_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (s_lvgl.grid_canvas_buffer == NULL) {
-        ESP_LOGE(TAG, "falha ao alocar canvas da grade (%u bytes)", (unsigned)canvas_size);
-        return;
-    }
-
-    s_lvgl.grid_canvas = lv_canvas_create(parent);
-    lv_obj_remove_style_all(s_lvgl.grid_canvas);
-    lv_obj_set_pos(s_lvgl.grid_canvas, APP_LVGL_WAVEFORM_INNER_X, APP_LVGL_WAVEFORM_INNER_Y);
-    lv_canvas_set_buffer(s_lvgl.grid_canvas,
-                         s_lvgl.grid_canvas_buffer,
-                         APP_LVGL_WAVEFORM_INNER_WIDTH,
-                         APP_LVGL_WAVEFORM_INNER_HEIGHT,
-                         LV_COLOR_FORMAT_RGB565);
-    app_lvgl_draw_grid_canvas(s_lvgl.grid_canvas);
 }
 
 /**
@@ -1220,8 +1265,7 @@ static void app_lvgl_create_waveform_area(lv_obj_t *parent)
     lv_obj_set_style_border_color(waveform, lv_color_hex(0xffffff), LV_PART_MAIN);
     lv_obj_set_style_radius(waveform, 0, LV_PART_MAIN);
 
-    app_lvgl_create_grid_canvas(parent);
-    app_lvgl_create_waveform_chart(parent);
+    app_lvgl_create_waveform_renderer(parent);
     app_lvgl_create_cursors(parent);
     app_lvgl_create_trigger_line(parent);
     app_lvgl_create_backlight_control(parent);
