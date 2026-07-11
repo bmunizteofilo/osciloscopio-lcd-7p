@@ -148,8 +148,10 @@ typedef struct {
     bool paused;
     bool trigger_enabled;
     bool trigger_rising;
+    bool trigger_single_captured;
     uint8_t trigger_mode;
     uint8_t trigger_channel;
+    uint32_t trigger_single_first_sample;
     uint8_t backlight_percent;
     uint32_t time_base_us_per_div;
     uint32_t voltage_base_mv_per_div;
@@ -483,6 +485,7 @@ static void app_lvgl_trigger_line_event_cb(lv_event_t *event)
         y = APP_LVGL_WAVEFORM_INNER_Y + APP_LVGL_WAVEFORM_INNER_HEIGHT - 2;
     }
     lv_obj_set_y(s_lvgl.trigger_line, y);
+    s_lvgl.trigger_single_captured = false;
     app_lvgl_show_trigger_line();
     lv_obj_invalidate(s_lvgl.waveform_renderer);
 }
@@ -497,6 +500,7 @@ static void app_lvgl_trigger_event_cb(lv_event_t *event)
     lv_obj_t *dropdown = lv_event_get_target_obj(event);
     s_lvgl.trigger_mode = (uint8_t)lv_dropdown_get_selected(dropdown);
     s_lvgl.trigger_enabled = s_lvgl.trigger_mode != 0;
+    s_lvgl.trigger_single_captured = false;
 
     if (s_lvgl.trigger_line == NULL) {
         return;
@@ -982,6 +986,7 @@ static void app_lvgl_create_trigger_line(lv_obj_t *parent)
 {
     s_lvgl.trigger_enabled = false;
     s_lvgl.trigger_rising = true;
+    s_lvgl.trigger_single_captured = false;
     s_lvgl.trigger_mode = 0;
     s_lvgl.trigger_channel = 0;
 
@@ -1062,6 +1067,7 @@ static void app_lvgl_trigger_edge_event_cb(lv_event_t *event)
 {
     lv_obj_t *dropdown = lv_event_get_target_obj(event);
     s_lvgl.trigger_rising = lv_dropdown_get_selected(dropdown) == 0;
+    s_lvgl.trigger_single_captured = false;
     if (s_lvgl.waveform_renderer != NULL) {
         lv_obj_invalidate(s_lvgl.waveform_renderer);
     }
@@ -1071,6 +1077,7 @@ static void app_lvgl_trigger_channel_event_cb(lv_event_t *event)
 {
     lv_obj_t *dropdown = lv_event_get_target_obj(event);
     s_lvgl.trigger_channel = (uint8_t)lv_dropdown_get_selected(dropdown);
+    s_lvgl.trigger_single_captured = false;
     if (s_lvgl.waveform_renderer != NULL) {
         lv_obj_invalidate(s_lvgl.waveform_renderer);
     }
@@ -1308,8 +1315,24 @@ static void app_lvgl_waveform_draw_event_cb(lv_event_t *event)
     const uint32_t max_offset = s_lvgl.waveform_sample_count - displayed_samples;
     const uint32_t view_offset = s_lvgl.history_view_offset < max_offset ? s_lvgl.history_view_offset : max_offset;
     uint32_t first_sample = max_offset - view_offset;
-    if (!s_lvgl.paused && s_lvgl.time_base_us_per_div <= 100000U && displayed_samples == visible_samples) {
-        (void)app_lvgl_waveform_find_trigger(displayed_samples, &first_sample);
+    bool draw_signal = true;
+    const bool trigger_active = !s_lvgl.paused && s_lvgl.time_base_us_per_div <= 100000U &&
+                                displayed_samples == visible_samples && s_lvgl.trigger_enabled;
+    if (trigger_active) {
+        if (s_lvgl.trigger_mode == 3 && s_lvgl.trigger_single_captured) {
+            first_sample = s_lvgl.trigger_single_first_sample;
+        } else {
+            const bool trigger_found = app_lvgl_waveform_find_trigger(displayed_samples, &first_sample);
+            if (trigger_found && s_lvgl.trigger_mode == 3) {
+                s_lvgl.trigger_single_first_sample = first_sample;
+                s_lvgl.trigger_single_captured = true;
+            } else if (!trigger_found && s_lvgl.trigger_mode != 2) {
+                draw_signal = false;
+            }
+        }
+    }
+    if (!draw_signal) {
+        return;
     }
     const uint16_t first_x = APP_LVGL_WAVEFORM_INNER_X;
     const uint16_t rendered_width = 1 + (uint16_t)(((uint64_t)(displayed_samples - 1) * (APP_LVGL_CHART_POINT_COUNT - 1)) /
