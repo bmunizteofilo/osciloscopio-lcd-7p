@@ -117,7 +117,7 @@ static void app_lvgl_touch_read_cb(lv_indev_t *input, lv_indev_data_t *data)
 }
 
 /**
- * @brief Executa continuamente timers, animações e renderização do LVGL.
+ * @brief Executa continuamente timers, animações e renderização do LVGL no core 1.
  */
 static void app_lvgl_task(void *arg)
 {
@@ -194,6 +194,12 @@ esp_err_t app_lvgl_init(wt32s3_lcd_handle_t lcd, gt911_touch_handle_t touch)
     esp_err_t err = osc_create(lcd);
     app_lvgl_unlock();
     ESP_RETURN_ON_ERROR(err, "app_lvgl", "falha ao criar osciloscopio");
-    BaseType_t created = xTaskCreate(app_lvgl_task, "lvgl", APP_LVGL_TASK_STACK_SIZE, NULL, APP_LVGL_TASK_PRIORITY, &s_lvgl.task);
+    BaseType_t created = xTaskCreatePinnedToCore(app_lvgl_task,
+                                                 "lvgl",
+                                                 APP_LVGL_TASK_STACK_SIZE,
+                                                 NULL,
+                                                 APP_LVGL_TASK_PRIORITY,
+                                                 &s_lvgl.task,
+                                                 1);
     return created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
