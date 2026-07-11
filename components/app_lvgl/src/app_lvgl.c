@@ -1,5 +1,6 @@
 #include "app_lvgl.h"
 #include <stdbool.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include "esp_attr.h"
@@ -95,11 +96,10 @@ static const uint32_t APP_LVGL_CHANNEL_COLORS[] = {
 
 static const int32_t APP_LVGL_MEASUREMENT_X[] = {
     8,
-    90,
-    220,
-    350,
-    480,
-    650,
+    130,
+    250,
+    385,
+    530,
 };
 
 static const uint32_t APP_LVGL_TIME_BASE_US_PER_DIV[] = {
@@ -142,6 +142,7 @@ typedef struct {
     lv_timer_t *trigger_hide_timer;
     lv_obj_t *backlight_slider;
     lv_obj_t *backlight_label;
+    lv_obj_t *measurement_labels[4][5];
     bool channel_visible[4];
     app_lvgl_cursor_mode_t cursor_mode;
     app_lvgl_theme_t theme;
@@ -162,11 +163,15 @@ typedef struct {
     uint32_t history_view_offset;
     int32_t history_drag_last_x;
     bool history_navigation_started;
+    uint32_t last_plot_first_sample;
+    uint32_t last_plot_sample_count;
+    bool last_plot_triggered;
     SemaphoreHandle_t lock;
     TaskHandle_t task;
 } app_lvgl_context_t;
 
 static app_lvgl_context_t s_lvgl = {0};
+static uint16_t s_waveform_y_lookup[(APP_LVGL_ADC_CENTER * 2) + 1];
 
 /**
  * @brief Bloqueia o acesso as APIs do LVGL.
@@ -300,6 +305,7 @@ static void app_lvgl_waveform_reset(void);
 static void app_lvgl_update_buffer_label(void);
 static void app_lvgl_trigger_edge_event_cb(lv_event_t *event);
 static void app_lvgl_trigger_channel_event_cb(lv_event_t *event);
+static void app_lvgl_clear_measurements(uint8_t channel);
 
 static uint32_t app_lvgl_theme_waveform_bg(void)
 {
@@ -712,6 +718,9 @@ static void app_lvgl_channel_button_event_cb(lv_event_t *event)
 
     s_lvgl.channel_visible[channel_index] = !s_lvgl.channel_visible[channel_index];
     app_lvgl_update_channel_button(channel_index);
+    if (!s_lvgl.channel_visible[channel_index]) {
+        app_lvgl_clear_measurements(channel_index);
+    }
     if (s_lvgl.waveform_renderer != NULL) {
         lv_obj_invalidate(s_lvgl.waveform_renderer);
     }
@@ -1059,8 +1068,7 @@ static uint16_t app_lvgl_waveform_sample_to_y(uint16_t sample)
     if (sample > (APP_LVGL_ADC_CENTER * 2)) {
         sample = APP_LVGL_ADC_CENTER * 2;
     }
-    return (uint16_t)((((APP_LVGL_ADC_CENTER * 2) - sample) * (APP_LVGL_WAVEFORM_INNER_HEIGHT - 1)) /
-                      (APP_LVGL_ADC_CENTER * 2));
+    return s_waveform_y_lookup[sample];
 }
 
 static void app_lvgl_trigger_edge_event_cb(lv_event_t *event)
@@ -1110,7 +1118,11 @@ static void app_lvgl_waveform_push_samples(const int32_t samples[4])
     }
 
     for (uint8_t channel = 0; channel < 4; channel++) {
-        s_lvgl.waveform_samples[channel][write_index] = app_lvgl_waveform_sample_to_y((uint16_t)samples[channel]);
+        uint16_t sample = (uint16_t)samples[channel];
+        if (sample > (APP_LVGL_ADC_CENTER * 2)) {
+            sample = APP_LVGL_ADC_CENTER * 2;
+        }
+        s_lvgl.waveform_samples[channel][write_index] = sample;
     }
 }
 
@@ -1237,8 +1249,8 @@ static bool app_lvgl_waveform_find_trigger(uint32_t displayed_samples, uint32_t 
     const uint32_t last_event = s_lvgl.waveform_sample_count - right_samples - 1;
 
     for (uint32_t index = last_event; index > left_samples; index--) {
-        const int32_t previous = app_lvgl_waveform_get_sample(s_lvgl.trigger_channel, index - 1);
-        const int32_t current = app_lvgl_waveform_get_sample(s_lvgl.trigger_channel, index);
+        const int32_t previous = app_lvgl_waveform_sample_to_y(app_lvgl_waveform_get_sample(s_lvgl.trigger_channel, index - 1));
+        const int32_t current = app_lvgl_waveform_sample_to_y(app_lvgl_waveform_get_sample(s_lvgl.trigger_channel, index));
         const bool crossed = s_lvgl.trigger_rising ?
                              (previous >= threshold + hysteresis && current <= threshold - hysteresis) :
                              (previous <= threshold - hysteresis && current >= threshold + hysteresis);
@@ -1316,24 +1328,34 @@ static void app_lvgl_waveform_draw_event_cb(lv_event_t *event)
     const uint32_t view_offset = s_lvgl.history_view_offset < max_offset ? s_lvgl.history_view_offset : max_offset;
     uint32_t first_sample = max_offset - view_offset;
     bool draw_signal = true;
+    bool plot_triggered = false;
     const bool trigger_active = !s_lvgl.paused && s_lvgl.time_base_us_per_div <= 100000U &&
                                 displayed_samples == visible_samples && s_lvgl.trigger_enabled;
     if (trigger_active) {
         if (s_lvgl.trigger_mode == 3 && s_lvgl.trigger_single_captured) {
             first_sample = s_lvgl.trigger_single_first_sample;
+            plot_triggered = true;
         } else {
             const bool trigger_found = app_lvgl_waveform_find_trigger(displayed_samples, &first_sample);
             if (trigger_found && s_lvgl.trigger_mode == 3) {
                 s_lvgl.trigger_single_first_sample = first_sample;
                 s_lvgl.trigger_single_captured = true;
+                plot_triggered = true;
+            } else if (trigger_found) {
+                plot_triggered = true;
             } else if (!trigger_found && s_lvgl.trigger_mode != 2) {
                 draw_signal = false;
             }
         }
     }
     if (!draw_signal) {
+        s_lvgl.last_plot_sample_count = 0;
+        s_lvgl.last_plot_triggered = false;
         return;
     }
+    s_lvgl.last_plot_first_sample = first_sample;
+    s_lvgl.last_plot_sample_count = displayed_samples;
+    s_lvgl.last_plot_triggered = plot_triggered;
     const uint16_t first_x = APP_LVGL_WAVEFORM_INNER_X;
     const uint16_t rendered_width = 1 + (uint16_t)(((uint64_t)(displayed_samples - 1) * (APP_LVGL_CHART_POINT_COUNT - 1)) /
                                                     (visible_samples - 1));
@@ -1347,8 +1369,8 @@ static void app_lvgl_waveform_draw_event_cb(lv_event_t *event)
             if (s_lvgl.channel_visible[channel]) {
                 const uint16_t color = lv_color_to_u16(lv_color_hex(APP_LVGL_CHANNEL_COLORS[channel]));
                 app_lvgl_waveform_draw_line(framebuffer, stride_px, buffer_area, clip_area,
-                                             x0, APP_LVGL_WAVEFORM_INNER_Y + app_lvgl_waveform_get_sample(channel, source0),
-                                             x1, APP_LVGL_WAVEFORM_INNER_Y + app_lvgl_waveform_get_sample(channel, source1), color);
+                                             x0, APP_LVGL_WAVEFORM_INNER_Y + app_lvgl_waveform_sample_to_y(app_lvgl_waveform_get_sample(channel, source0)),
+                                             x1, APP_LVGL_WAVEFORM_INNER_Y + app_lvgl_waveform_sample_to_y(app_lvgl_waveform_get_sample(channel, source1)), color);
             }
         }
     }
@@ -1416,6 +1438,10 @@ static void app_lvgl_chart_timer_cb(lv_timer_t *timer)
  */
 static void app_lvgl_create_waveform_renderer(lv_obj_t *parent)
 {
+    for (uint16_t sample = 0; sample <= (APP_LVGL_ADC_CENTER * 2); sample++) {
+        s_waveform_y_lookup[sample] = (uint16_t)((((APP_LVGL_ADC_CENTER * 2) - sample) * (APP_LVGL_WAVEFORM_INNER_HEIGHT - 1)) /
+                                                  (APP_LVGL_ADC_CENTER * 2));
+    }
     for (uint8_t channel = 0; channel < 4; channel++) {
         s_lvgl.waveform_samples[channel] = heap_caps_malloc(APP_LVGL_HISTORY_BYTES_PER_CHANNEL, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (s_lvgl.waveform_samples[channel] == NULL) {
@@ -1483,7 +1509,6 @@ static void app_lvgl_create_waveform_area(lv_obj_t *parent)
 static void app_lvgl_create_measurement_row(lv_obj_t *parent, uint8_t channel_index, uint8_t column, int32_t y)
 {
     const char *texts[] = {
-        "CH%u",
         "RMS 0.00",
         "PK+ 0.00",
         "PK- 0.00",
@@ -1507,14 +1532,108 @@ static void app_lvgl_create_measurement_row(lv_obj_t *parent, uint8_t channel_in
 
     for (size_t i = 0; i < (sizeof(texts) / sizeof(texts[0])); i++) {
         lv_obj_t *label = lv_label_create(row);
-        if (i == 0) {
-            lv_label_set_text_fmt(label, texts[i], (unsigned)(channel_index + 1));
-        } else {
-            lv_label_set_text(label, texts[i]);
-        }
+        lv_label_set_text(label, texts[i]);
+        s_lvgl.measurement_labels[channel_index][i] = label;
         lv_obj_set_style_text_color(label, text_color, LV_PART_MAIN);
         lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN);
         lv_obj_align(label, LV_ALIGN_LEFT_MID, APP_LVGL_MEASUREMENT_X[i], 0);
+    }
+}
+
+static uint32_t app_lvgl_counts_to_mv(uint32_t counts)
+{
+    return (counts * s_lvgl.voltage_base_mv_per_div) / APP_LVGL_ADC_DIV_VALUE;
+}
+
+static void app_lvgl_clear_measurements(uint8_t channel)
+{
+    lv_label_set_text(s_lvgl.measurement_labels[channel][0], "RMS 0.00");
+    lv_label_set_text(s_lvgl.measurement_labels[channel][1], "PK+ 0.00");
+    lv_label_set_text(s_lvgl.measurement_labels[channel][2], "PK- 0.00");
+    lv_label_set_text(s_lvgl.measurement_labels[channel][3], "FREQ 0.0Hz");
+    lv_label_set_text(s_lvgl.measurement_labels[channel][4], "DUTY 0%");
+}
+
+static void app_lvgl_update_frequency_duty(uint8_t channel, uint32_t first_sample, uint32_t sample_count)
+{
+    if (channel != s_lvgl.trigger_channel || !s_lvgl.trigger_enabled || !s_lvgl.last_plot_triggered) {
+        lv_label_set_text(s_lvgl.measurement_labels[channel][3], "FREQ --");
+        lv_label_set_text(s_lvgl.measurement_labels[channel][4], "DUTY --");
+        return;
+    }
+
+    uint32_t previous_rising = 0;
+    uint32_t last_rising = 0;
+    const uint16_t lower_threshold = APP_LVGL_ADC_CENTER - 16;
+    const uint16_t upper_threshold = APP_LVGL_ADC_CENTER + 16;
+    for (uint32_t index = 1; index < sample_count; index++) {
+        const uint16_t previous = app_lvgl_waveform_get_sample(channel, first_sample + index - 1);
+        const uint16_t current = app_lvgl_waveform_get_sample(channel, first_sample + index);
+        if (previous <= lower_threshold && current >= upper_threshold) {
+            previous_rising = last_rising;
+            last_rising = index;
+        }
+    }
+
+    if (previous_rising == 0 || last_rising <= previous_rising) {
+        lv_label_set_text(s_lvgl.measurement_labels[channel][3], "FREQ --");
+        lv_label_set_text(s_lvgl.measurement_labels[channel][4], "DUTY --");
+        return;
+    }
+
+    const uint32_t period_samples = last_rising - previous_rising;
+    uint32_t high_samples = 0;
+    for (uint32_t index = previous_rising; index < last_rising; index++) {
+        high_samples += app_lvgl_waveform_get_sample(channel, first_sample + index) >= APP_LVGL_ADC_CENTER;
+    }
+    const float frequency_hz = (float)APP_LVGL_SIM_SAMPLE_RATE_HZ / period_samples;
+    const uint32_t duty_percent = (high_samples * 100U) / period_samples;
+    lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][3], "FREQ %.1fHz", (double)frequency_hz);
+    lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][4], "DUTY %u%%", (unsigned)duty_percent);
+}
+
+/**
+ * @brief Atualiza RMS, picos e medidas temporais da ultima janela desenhada.
+ */
+static void app_lvgl_measurement_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    const uint32_t sample_count = s_lvgl.last_plot_sample_count;
+    const uint32_t first_sample = s_lvgl.last_plot_first_sample;
+    if (sample_count == 0) {
+        return;
+    }
+
+    for (uint8_t channel = 0; channel < 4; channel++) {
+        if (!s_lvgl.channel_visible[channel]) {
+            app_lvgl_clear_measurements(channel);
+            continue;
+        }
+        int32_t positive_peak = 0;
+        int32_t negative_peak = 0;
+        uint64_t sum_squares = 0;
+        for (uint32_t index = 0; index < sample_count; index++) {
+            const int32_t centered = (int32_t)app_lvgl_waveform_get_sample(channel, first_sample + index) - APP_LVGL_ADC_CENTER;
+            if (centered > positive_peak) {
+                positive_peak = centered;
+            }
+            if (centered < negative_peak) {
+                negative_peak = centered;
+            }
+            sum_squares += (uint64_t)(centered * centered);
+        }
+
+        const uint32_t rms_counts = (uint32_t)sqrt((double)sum_squares / sample_count);
+        char rms_text[16] = {0};
+        char positive_text[16] = {0};
+        char negative_text[16] = {0};
+        app_lvgl_format_voltage(app_lvgl_counts_to_mv(rms_counts), rms_text, sizeof(rms_text));
+        app_lvgl_format_voltage(app_lvgl_counts_to_mv((uint32_t)positive_peak), positive_text, sizeof(positive_text));
+        app_lvgl_format_voltage(app_lvgl_counts_to_mv((uint32_t)-negative_peak), negative_text, sizeof(negative_text));
+        lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][0], "RMS %s", rms_text);
+        lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][1], "PK+ %s", positive_text);
+        lv_label_set_text_fmt(s_lvgl.measurement_labels[channel][2], "PK- -%s", negative_text);
+        app_lvgl_update_frequency_duty(channel, first_sample, sample_count);
     }
 }
 
@@ -1529,6 +1648,7 @@ static void app_lvgl_create_measurements(lv_obj_t *parent)
     app_lvgl_create_measurement_row(parent, 2, 1, APP_LVGL_MEASUREMENTS_Y);
     app_lvgl_create_measurement_row(parent, 1, 0, APP_LVGL_MEASUREMENTS_Y + APP_LVGL_CHANNEL_ROW_HEIGHT);
     app_lvgl_create_measurement_row(parent, 3, 1, APP_LVGL_MEASUREMENTS_Y + APP_LVGL_CHANNEL_ROW_HEIGHT);
+    lv_timer_create(app_lvgl_measurement_timer_cb, 1000, NULL);
 }
 
 /**
