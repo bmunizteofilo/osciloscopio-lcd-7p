@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "lcd_7p",
-    "project_version":    "1",
+    "project_version":    "25dcbf3-dirty",
     "project_path":       "C:/Users/Bruno/workspace_esp32/lcd_7p",
     "idf_path":           "C:/esp/v5.5.3",
     "build_dir":          "C:/Users/Bruno/workspace_esp32/lcd_7p/build",
@@ -41,7 +41,7 @@
             "managed_priv_reqs": [],
             "file": "C:/Users/Bruno/workspace_esp32/lcd_7p/build/esp-idf/app_lvgl/libapp_lvgl.a",
             "sources": [ "C:/Users/Bruno/workspace_esp32/lcd_7p/components/app_lvgl/src/app_lvgl.c" ],
-            "include_dirs": [ "include", "../../Drivers/i2c/include", "../../Drivers/gpio/include", "../../main", "../aw9523b/include", "../gt911_touch/include", "../wt32s3_lcd/include" ]
+            "include_dirs": [ "include", "../../Drivers/i2c/include", "../../Drivers/gpio/include", "../../main", "../aw9523b/include", "../gt911_touch/include", "../wt32s3_lcd/include", "../../managed_components/lvgl__lvgl/src" ]
         },
         "app_trace": {
             "alias": "idf::app_trace",
@@ -3094,7 +3094,7 @@
             "priv_reqs": [],
             "managed_reqs": [],
             "managed_priv_reqs": [],
-            "include_dirs": [ "include", "../../Drivers/i2c/include", "../../Drivers/gpio/include", "../../main", "../aw9523b/include", "../gt911_touch/include", "../wt32s3_lcd/include" ]
+            "include_dirs": [ "include", "../../Drivers/i2c/include", "../../Drivers/gpio/include", "../../main", "../aw9523b/include", "../gt911_touch/include", "../wt32s3_lcd/include", "../../managed_components/lvgl__lvgl/src" ]
         },
         "aw9523b": {
             "alias": "idf::aw9523b",

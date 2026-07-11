@@ -45,6 +45,7 @@ static esp_err_t app_bus_init(driver_i2c_bus_handle_t *out_bus)
  */
 void app_main(void)
 {
+    ESP_LOGI(TAG, "Hello World");
     ESP_LOGI(TAG, "Inicializando WT32S3-07S");
 
     driver_i2c_bus_handle_t i2c_bus = NULL;
