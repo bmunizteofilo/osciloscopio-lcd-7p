@@ -150,6 +150,7 @@ typedef struct {
     uint32_t chart_point_accumulator_q8;
     uint16_t waveform_samples[4][APP_LVGL_CHART_POINT_COUNT];
     uint16_t waveform_sample_count;
+    uint16_t waveform_sample_head;
     SemaphoreHandle_t lock;
     TaskHandle_t task;
 } app_lvgl_context_t;
@@ -1059,6 +1060,37 @@ static uint16_t app_lvgl_waveform_sample_to_y(uint16_t sample)
                       (APP_LVGL_ADC_CENTER * 2));
 }
 
+/**
+ * @brief Retorna uma amostra na ordem visual: esquerda (mais antiga) para direita (mais nova).
+ */
+static uint16_t app_lvgl_waveform_get_sample(uint8_t channel, uint16_t visual_index)
+{
+    const uint16_t physical_index = (s_lvgl.waveform_sample_head + visual_index) % APP_LVGL_CHART_POINT_COUNT;
+    return s_lvgl.waveform_samples[channel][physical_index];
+}
+
+/**
+ * @brief Insere uma amostra multicanal no historico circular da waveform.
+ *
+ * Esta e a fronteira entre aquisicao e interface: o gerador simulado usa a
+ * mesma entrada que sera usada futuramente pelo receptor SPI do ADC.
+ */
+static void app_lvgl_waveform_push_samples(const int32_t samples[4])
+{
+    uint16_t write_index;
+    if (s_lvgl.waveform_sample_count < APP_LVGL_CHART_POINT_COUNT) {
+        write_index = (s_lvgl.waveform_sample_head + s_lvgl.waveform_sample_count) % APP_LVGL_CHART_POINT_COUNT;
+        s_lvgl.waveform_sample_count++;
+    } else {
+        write_index = s_lvgl.waveform_sample_head;
+        s_lvgl.waveform_sample_head = (s_lvgl.waveform_sample_head + 1) % APP_LVGL_CHART_POINT_COUNT;
+    }
+
+    for (uint8_t channel = 0; channel < 4; channel++) {
+        s_lvgl.waveform_samples[channel][write_index] = app_lvgl_waveform_sample_to_y((uint16_t)samples[channel]);
+    }
+}
+
 static void app_lvgl_waveform_set_pixel(uint16_t *framebuffer, uint32_t stride_px, const lv_area_t *buffer_area, const lv_area_t *clip_area, int32_t x, int32_t y, uint16_t color)
 {
     if (x >= APP_LVGL_WAVEFORM_INNER_X && x < APP_LVGL_WAVEFORM_INNER_X + APP_LVGL_WAVEFORM_INNER_WIDTH &&
@@ -1157,8 +1189,8 @@ static void app_lvgl_waveform_draw_event_cb(lv_event_t *event)
             if (s_lvgl.channel_visible[channel]) {
                 const uint16_t color = lv_color_to_u16(lv_color_hex(APP_LVGL_CHANNEL_COLORS[channel]));
                 app_lvgl_waveform_draw_line(framebuffer, stride_px, buffer_area, clip_area,
-                                             x0, APP_LVGL_WAVEFORM_INNER_Y + s_lvgl.waveform_samples[channel][sample_index - 1],
-                                             x1, APP_LVGL_WAVEFORM_INNER_Y + s_lvgl.waveform_samples[channel][sample_index], color);
+                                             x0, APP_LVGL_WAVEFORM_INNER_Y + app_lvgl_waveform_get_sample(channel, sample_index - 1),
+                                             x1, APP_LVGL_WAVEFORM_INNER_Y + app_lvgl_waveform_get_sample(channel, sample_index), color);
             }
         }
     }
@@ -1170,6 +1202,7 @@ static void app_lvgl_waveform_draw_event_cb(lv_event_t *event)
 static void app_lvgl_waveform_reset(void)
 {
     s_lvgl.waveform_sample_count = 0;
+    s_lvgl.waveform_sample_head = 0;
 }
 
 /**
@@ -1209,18 +1242,7 @@ static void app_lvgl_chart_timer_cb(lv_timer_t *timer)
         const int32_t ch3_sample = (ch3_high ? APP_LVGL_CH1_HIGH : APP_LVGL_CH1_LOW) - APP_LVGL_CH3_OFFSET;
         const int32_t ch4_sample = (ch4_high ? APP_LVGL_CH1_HIGH : APP_LVGL_CH1_LOW) - APP_LVGL_CH4_OFFSET;
         const int32_t samples[] = {ch1_sample, ch2_sample, ch3_sample, ch4_sample};
-        if (s_lvgl.waveform_sample_count < APP_LVGL_CHART_POINT_COUNT) {
-            for (uint8_t channel = 0; channel < 4; channel++) {
-                s_lvgl.waveform_samples[channel][s_lvgl.waveform_sample_count] = app_lvgl_waveform_sample_to_y(samples[channel]);
-            }
-            s_lvgl.waveform_sample_count++;
-        } else {
-            for (uint8_t channel = 0; channel < 4; channel++) {
-                memmove(s_lvgl.waveform_samples[channel], s_lvgl.waveform_samples[channel] + 1,
-                        (APP_LVGL_CHART_POINT_COUNT - 1) * sizeof(s_lvgl.waveform_samples[channel][0]));
-                s_lvgl.waveform_samples[channel][APP_LVGL_CHART_POINT_COUNT - 1] = app_lvgl_waveform_sample_to_y(samples[channel]);
-            }
-        }
+        app_lvgl_waveform_push_samples(samples);
     }
     lv_obj_invalidate(s_lvgl.waveform_renderer);
 }
