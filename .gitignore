@@ -3,3 +3,6 @@
 /.vscode/
 /.agents/
 /managed_components/
+
+# Plataforma LVGL e simulador locais exportados pelo NXP GUI Guider
+/gui_guider_mb/platform/

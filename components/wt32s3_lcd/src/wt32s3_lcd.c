@@ -32,7 +32,7 @@
 
 #define WT32S3_LCD_RST_PORT AW9523B_PORT_1
 #define WT32S3_LCD_RST_PIN 0
-#define WT32S3_LCD_PIXEL_CLOCK_HZ (22 * 1000 * 1000)
+#define WT32S3_LCD_PIXEL_CLOCK_HZ (18 * 1000 * 1000)
 #define WT32S3_LCD_BACKLIGHT_TIMER LEDC_TIMER_0
 #define WT32S3_LCD_BACKLIGHT_MODE LEDC_LOW_SPEED_MODE
 #define WT32S3_LCD_BACKLIGHT_CHANNEL LEDC_CHANNEL_0
@@ -104,12 +104,12 @@ static esp_err_t wt32s3_lcd_create_rgb_panel(wt32s3_lcd_handle_t handle)
             .pclk_hz = WT32S3_LCD_PIXEL_CLOCK_HZ,
             .h_res = WT32S3_LCD_H_RES,
             .v_res = WT32S3_LCD_V_RES,
-            .hsync_pulse_width = 87,
-            .hsync_back_porch = 1,
-            .hsync_front_porch = 200,
-            .vsync_pulse_width = 3,
-            .vsync_back_porch = 29,
-            .vsync_front_porch = 200,
+            .hsync_pulse_width = 48,
+            .hsync_back_porch = 40,
+            .hsync_front_porch = 40,
+            .vsync_pulse_width = 1,
+            .vsync_back_porch = 31,
+            .vsync_front_porch = 13,
             .flags.hsync_idle_low = false,
             .flags.vsync_idle_low = false,
             .flags.pclk_active_neg = false,

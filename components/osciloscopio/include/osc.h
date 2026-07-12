@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esp_err.h"
+#include "lvgl.h"
 #include "wt32s3_lcd.h"
 
 #ifdef __cplusplus
@@ -8,12 +9,19 @@ extern "C" {
 #endif
 
 /**
- * @brief Cria e carrega a interface do osciloscópio.
+ * @brief Cria a interface do osciloscópio.
  *
  * @param[in] lcd Handle do painel usado para controlar o backlight.
  * @return ESP_OK em sucesso ou ESP_ERR_NO_MEM se a tela não puder ser criada.
  */
 esp_err_t osc_create(wt32s3_lcd_handle_t lcd);
+
+/**
+ * @brief Retorna a tela criada pelo componente do osciloscópio.
+ *
+ * @return Ponteiro da tela LVGL ou @c NULL se @ref osc_create ainda não foi chamado.
+ */
+lv_obj_t *osc_get_screen(void);
 
 /**
  * @brief Define a taxa de frames recebidos pela entrada de aquisição.

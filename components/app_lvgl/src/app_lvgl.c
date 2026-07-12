@@ -9,7 +9,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
-#include "osc.h"
+#include "ui_flow.h"
 
 /** @brief Periodo do tick entregue ao LVGL, em milissegundos. */
 #define APP_LVGL_TICK_PERIOD_MS 1
@@ -170,7 +170,7 @@ static esp_err_t app_lvgl_input_init(gt911_touch_handle_t touch)
 }
 
 /**
- * @brief Inicializa a infraestrutura LVGL e cria a tela do osciloscópio.
+ * @brief Inicializa a infraestrutura LVGL e inicia o fluxo de telas da aplicação.
  *
  * @param[in] lcd Handle do painel RGB.
  * @param[in] touch Handle do controlador GT911.
@@ -191,9 +191,9 @@ esp_err_t app_lvgl_init(wt32s3_lcd_handle_t lcd, gt911_touch_handle_t touch)
     ESP_RETURN_ON_ERROR(esp_timer_create(&tick_args, &tick_timer), "app_lvgl", "falha ao criar tick LVGL");
     ESP_RETURN_ON_ERROR(esp_timer_start_periodic(tick_timer, APP_LVGL_TICK_PERIOD_MS * 1000U), "app_lvgl", "falha ao iniciar tick LVGL");
     app_lvgl_lock();
-    esp_err_t err = osc_create(lcd);
+    esp_err_t err = ui_flow_start();
     app_lvgl_unlock();
-    ESP_RETURN_ON_ERROR(err, "app_lvgl", "falha ao criar osciloscopio");
+    ESP_RETURN_ON_ERROR(err, "app_lvgl", "falha ao iniciar fluxo de telas");
     BaseType_t created = xTaskCreatePinnedToCore(app_lvgl_task,
                                                  "lvgl",
                                                  APP_LVGL_TASK_STACK_SIZE,

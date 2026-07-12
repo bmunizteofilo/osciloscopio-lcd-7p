@@ -1545,8 +1545,17 @@ esp_err_t osc_create(wt32s3_lcd_handle_t lcd)
         }
     }
 
-    lv_screen_load(s_lvgl.screen);
     return ESP_OK;
+}
+
+/**
+ * @brief Retorna a tela criada pelo componente do osciloscópio.
+ *
+ * @return Ponteiro da tela LVGL ou @c NULL se ela ainda não foi criada.
+ */
+lv_obj_t *osc_get_screen(void)
+{
+    return s_lvgl.screen;
 }
 
 /**
