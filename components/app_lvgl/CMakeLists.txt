@@ -8,5 +8,7 @@ idf_component_register(
         "../aw9523b/include"
         "../gt911_touch/include"
         "../wt32s3_lcd/include"
-    REQUIRES lvgl esp_timer wt32s3_lcd gt911_touch
+        "../ui_flow/include"
+        "../../managed_components/lvgl__lvgl/src"
+    REQUIRES lvgl esp_timer wt32s3_lcd gt911_touch ui_flow osciloscopio
 )

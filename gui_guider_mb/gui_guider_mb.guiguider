@@ -1,0 +1,1236 @@
+{
+  "projectId": "project-MRGSMGOGRVH3",
+  "projectName": "gui_guider_mb",
+  "projectPath": "C:\\Users\\Bruno\\workspace_esp32\\lcd_7p\\gui_guider_mb",
+  "version": "2.0.0",
+  "toolVendor": "NXP Semiconductors",
+  "createDate": "2026-07-11",
+  "createVersion": "2.0.0",
+  "lastModified": "2026-07-12T22:24:37.695Z",
+  "description": "",
+  "metadata": {
+    "board": {
+      "id": 20,
+      "name": "Simulator"
+    },
+    "application": {
+      "id": 3,
+      "name": "BlankTemplate"
+    }
+  },
+  "projectSettings": {
+    "lvglVersion": "9.4.0",
+    "width": 800,
+    "height": 480,
+    "targetConfig": {
+      "targetRun": false,
+      "targetBuild": false,
+      "toolchainAlias": "simulator",
+      "toolchain": "x86_64-w64-mingw32",
+      "display": "SDL2",
+      "colorDepth": 16,
+      "display_name": ""
+    },
+    "imageConfig": {
+      "storage_type": "CArray",
+      "sd_path": "/sdcard/images/",
+      "flash_address": "0xFFFFFFFFU",
+      "color_format": "RGB565A8",
+      "aligned": 0,
+      "origin_size": 0,
+      "compress": "",
+      "dither": ""
+    },
+    "fontConfig": {
+      "default_family": "montserratMedium.ttf",
+      "default_size": 14,
+      "enable_base_chars": 1,
+      "base_chars": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    }
+  },
+  "lvConf": {
+    "LV_MEM_SIZE": 320
+  },
+  "UI": {
+    "screen_list": [
+      {
+        "type": "layer_sys",
+        "name": "layer_sys",
+        "id": "layer_sys",
+        "children": []
+      },
+      {
+        "type": "layer_top",
+        "name": "layer_top",
+        "id": "layer_top",
+        "children": []
+      },
+      {
+        "type": "layer_bottom",
+        "name": "layer_bottom",
+        "id": "layer_bottom",
+        "children": []
+      },
+      {
+        "type": "screen",
+        "id": "screen",
+        "name": "screen_splash",
+        "default_screen": true,
+        "style": {
+          "LV_PART_MAIN|LV_STATE_DEFAULT": {
+            "part": "LV_PART_MAIN",
+            "state": "LV_STATE_DEFAULT",
+            "border_width": 0,
+            "margin_top": 0,
+            "margin_bottom": 0,
+            "margin_left": 0,
+            "margin_right": 0,
+            "pad_top": 0,
+            "pad_bottom": 0,
+            "pad_left": 0,
+            "pad_right": 0,
+            "pad_row": 0,
+            "pad_column": 0,
+            "pad_radial": 0,
+            "line_width": 0
+          }
+        },
+        "children": [
+          {
+            "id": "container_MRGSTNM6KFTA",
+            "type": "container",
+            "name": "container_screen_splash",
+            "width": 800,
+            "width_unit": "px",
+            "height": 480,
+            "height_unit": "px",
+            "x": 0,
+            "x_unit": "px",
+            "y": 0,
+            "y_unit": "px",
+            "align": "LV_ALIGN_LEFT_MID",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#000000",
+                "border_width": 0,
+                "pad_top": 0,
+                "pad_bottom": 0,
+                "pad_left": 0,
+                "pad_right": 0,
+                "pad_row": 0,
+                "pad_column": 0,
+                "pad_radial": 0,
+                "margin_top": 0,
+                "margin_bottom": 0,
+                "margin_left": 0,
+                "margin_right": 0,
+                "arc_width": 0,
+                "arc_rounded": 0
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRGTLFO6L44J",
+                "type": "image",
+                "name": "image_screen_splash",
+                "width": 320,
+                "width_unit": "px",
+                "height": 240,
+                "height_unit": "px",
+                "x": 240,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT"
+                  }
+                },
+                "src": "resources/image/mecanica_avancada.png"
+              },
+              {
+                "id": "label_MRGTFG44OQ15",
+                "type": "label",
+                "name": "label_carregando_screen_splash",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 332,
+                "x_unit": "px",
+                "y": 425,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_color": "#f7f7f7",
+                    "text_family": "montserratMedium.ttf",
+                    "text_size": 25
+                  }
+                },
+                "text": "Carregando..."
+              },
+              {
+                "id": "bar_MRGT9Z266GQS",
+                "type": "bar",
+                "name": "bar_screen_splash",
+                "width": 573,
+                "width_unit": "px",
+                "height": 30,
+                "height_unit": "px",
+                "x": 113,
+                "x_unit": "px",
+                "y": 355,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "border_color": "#efefef",
+                    "radius": 0,
+                    "bg_color": "#eeeeee",
+                    "line_rounded": 0
+                  }
+                },
+                "value": 50,
+                "value_anim": false,
+                "min_value": 0,
+                "max_value": 100,
+                "mode": "LV_BAR_MODE_NORMAL",
+                "orientation": "LV_BAR_ORIENTATION_AUTO"
+              },
+              {
+                "id": "label_MRGT1M07Y69I",
+                "type": "label",
+                "name": "label_screen_splash",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 263,
+                "x_unit": "px",
+                "y": 250,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_color": "#ffffff",
+                    "text_family": "montserratMedium.ttf",
+                    "text_size": 30
+                  }
+                },
+                "text": "MA-02 PIEZZO 6B"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "screen_g67u2qh",
+        "name": "screen_menu_principal",
+        "type": "screen",
+        "style": {
+          "LV_PART_MAIN|LV_STATE_DEFAULT": {
+            "part": "LV_PART_MAIN",
+            "state": "LV_STATE_DEFAULT",
+            "bg_color": "#000000"
+          }
+        },
+        "children": [
+          {
+            "id": "label_MRGYAD5J1K6R",
+            "type": "label",
+            "name": "label_menu_principal_hora",
+            "width": 0,
+            "width_unit": "content",
+            "height": 0,
+            "height_unit": "content",
+            "x": 683,
+            "x_unit": "px",
+            "y": 7,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "text_color": "#ffffff",
+                "text_size": 30
+              }
+            },
+            "text": "12:30"
+          },
+          {
+            "id": "label_MRGY970XCV70",
+            "type": "label",
+            "name": "label_menu_principal_data",
+            "width": 0,
+            "width_unit": "content",
+            "height": 0,
+            "height_unit": "content",
+            "x": 663,
+            "x_unit": "px",
+            "y": 51,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "text_color": "#ffffff",
+                "text_size": 20
+              }
+            },
+            "text": "11/07/2026"
+          },
+          {
+            "id": "image_MRGY8ECR8Q4X",
+            "type": "image",
+            "name": "image_mecanica",
+            "width": 183,
+            "width_unit": "px",
+            "height": 75,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 0,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT"
+              }
+            },
+            "src": "resources/image/mecanica_avancada.png"
+          },
+          {
+            "id": "button_MRGXQV85EBT7",
+            "type": "button",
+            "name": "button_configuracoes",
+            "width": 253,
+            "width_unit": "px",
+            "height": 166,
+            "height_unit": "px",
+            "x": 537,
+            "x_unit": "px",
+            "y": 288,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#183B63"
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRGY6ZGOZQUW",
+                "type": "label",
+                "name": "label_bt_configuracoes",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 40,
+                "x_unit": "px",
+                "y": 117,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 20
+                  }
+                },
+                "text": "Configurações"
+              },
+              {
+                "id": "image_MRGXYNQ20D7E",
+                "type": "image",
+                "name": "image_bt_configuracoes",
+                "width": 100,
+                "width_unit": "px",
+                "height": 100,
+                "height_unit": "px",
+                "x": 56,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#f5f5f5",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/configuracoes.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRGXQM4ZBC70",
+            "type": "button",
+            "name": "button_diagnostico",
+            "width": 253,
+            "width_unit": "px",
+            "height": 166,
+            "height_unit": "px",
+            "x": 273,
+            "x_unit": "px",
+            "y": 288,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#103433"
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRGY66IBSRFC",
+                "type": "label",
+                "name": "label_bt_diagnosticos",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 40,
+                "x_unit": "px",
+                "y": 117,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 20
+                  }
+                },
+                "text": "Diagnóstico"
+              },
+              {
+                "id": "image_MRGXYJNEP9A4",
+                "type": "image",
+                "name": "image_bt_diagnostico",
+                "width": 100,
+                "width_unit": "px",
+                "height": 100,
+                "height_unit": "px",
+                "x": 57,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#f5f5f5",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/diagnostico.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRGXQB5UDCXQ",
+            "type": "button",
+            "name": "button_relatorio",
+            "width": 253,
+            "width_unit": "px",
+            "height": 166,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 288,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#8f6334"
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRGY40BWTEN1",
+                "type": "label",
+                "name": "label_bt_relatorios",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 53,
+                "x_unit": "px",
+                "y": 117,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 20
+                  }
+                },
+                "text": "Relatórios"
+              },
+              {
+                "id": "image_MRGXYFJCKG14",
+                "type": "image",
+                "name": "image_bt_relatorio",
+                "width": 100,
+                "width_unit": "px",
+                "height": 100,
+                "height_unit": "px",
+                "x": 56,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/relatorio.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRGXPERUCNJD",
+            "type": "button",
+            "name": "button_modo_teste",
+            "width": 385,
+            "width_unit": "px",
+            "height": 181,
+            "height_unit": "px",
+            "x": 405,
+            "x_unit": "px",
+            "y": 92,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#442D68"
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRGY2NB64RCE",
+                "type": "label",
+                "name": "label_bt_modo_teste",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 113,
+                "x_unit": "px",
+                "y": 113,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_family": "montserratMedium.ttf",
+                    "text_size": 20
+                  }
+                },
+                "text": "Modo Teste"
+              },
+              {
+                "id": "image_MRGXVZ6QHLU4",
+                "type": "image",
+                "name": "image_bt_modo_teste",
+                "width": 100,
+                "width_unit": "px",
+                "height": 100,
+                "height_unit": "px",
+                "x": 122,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#f6f6f6",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/pulso.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRGXOPBLR6KQ",
+            "type": "button",
+            "name": "button_limpeza_bico",
+            "width": 385,
+            "width_unit": "px",
+            "height": 181,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 92,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#306A21"
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRGY1B938JBD",
+                "type": "label",
+                "name": "label_bt_limpeza_bico",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 91,
+                "x_unit": "px",
+                "y": 113,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_family": "montserratMedium.ttf",
+                    "text_size": 20
+                  }
+                },
+                "text": "Teste e Limpeza\n     de Bicos"
+              },
+              {
+                "id": "image_MRGXUWQ43N5H",
+                "type": "image",
+                "name": "image_bt_limpeza_bico",
+                "width": 100,
+                "width_unit": "px",
+                "height": 100,
+                "height_unit": "px",
+                "x": 122,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/teste.png"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "screen_ujm2kaw",
+        "name": "screen_configuracoes",
+        "type": "screen",
+        "style": {
+          "LV_PART_MAIN|LV_STATE_DEFAULT": {
+            "part": "LV_PART_MAIN",
+            "state": "LV_STATE_DEFAULT",
+            "bg_color": "#000000"
+          }
+        },
+        "children": [
+          {
+            "id": "button_MRH18FJQII5A",
+            "type": "button",
+            "name": "button_sobre",
+            "width": 358,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 26,
+            "x_unit": "px",
+            "y": 320,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#000000",
+                "border_color": "#2f3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRH1PCYCP2A4",
+                "type": "label",
+                "name": "label_bt_sobre",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 63,
+                "x_unit": "px",
+                "y": -1,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 20
+                  }
+                },
+                "text": "Sobre o Equipamento"
+              },
+              {
+                "id": "image_MRH1OBDMWN9V",
+                "type": "image",
+                "name": "image_bt_sobre",
+                "width": 51,
+                "width_unit": "px",
+                "height": 28,
+                "height_unit": "px",
+                "x": -4,
+                "x_unit": "px",
+                "y": -3,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/informacoes.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRH189BVPSTF",
+            "type": "button",
+            "name": "button_manutencao",
+            "width": 358,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 26,
+            "x_unit": "px",
+            "y": 264,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#000000",
+                "border_color": "#2f3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRH1LVSII3FG",
+                "type": "label",
+                "name": "label_bt_manutencao",
+                "width": 0,
+                "width_unit": "content",
+                "height": 28,
+                "height_unit": "px",
+                "x": 63,
+                "x_unit": "px",
+                "y": -1,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 20
+                  }
+                },
+                "text": "Manutenção / Calibração\n"
+              },
+              {
+                "id": "image_MRH1KYW5YIDI",
+                "type": "image",
+                "name": "image_bt_manutencao",
+                "width": 61,
+                "width_unit": "px",
+                "height": 24,
+                "height_unit": "px",
+                "x": -9,
+                "x_unit": "px",
+                "y": -1,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/manutencao.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRH17WTOK9IT",
+            "type": "button",
+            "name": "button_presets",
+            "width": 358,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 26,
+            "x_unit": "px",
+            "y": 208,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#000000",
+                "border_color": "#2f3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRH1JIE8IDOG",
+                "type": "label",
+                "name": "label_bt_presets",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 62,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 20
+                  }
+                },
+                "text": "Presets / Receitas"
+              },
+              {
+                "id": "image_MRH1I0G4369Z",
+                "type": "image",
+                "name": "image_bt_presets",
+                "width": 62,
+                "width_unit": "px",
+                "height": 33,
+                "height_unit": "px",
+                "x": -11,
+                "x_unit": "px",
+                "y": -5,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#fbfbfb",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/receita.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRH17PBST71U",
+            "type": "button",
+            "name": "button_parametros_gerais",
+            "width": 358,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 26,
+            "x_unit": "px",
+            "y": 152,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#000000",
+                "border_color": "#2f3539",
+                "border_width": 3,
+                "border_opa": 255
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRH1G9RIMUKD",
+                "type": "label",
+                "name": "label_bt_parametros_gerais",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 63,
+                "x_unit": "px",
+                "y": -1,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 20
+                  }
+                },
+                "text": "Parâmetros Gerais"
+              },
+              {
+                "id": "image_MRH1EONG67BC",
+                "type": "image",
+                "name": "image_bt_parametros_gerais",
+                "width": 53,
+                "width_unit": "px",
+                "height": 28,
+                "height_unit": "px",
+                "x": -11,
+                "x_unit": "px",
+                "y": -3,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/geral.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRH11DBONLKA",
+            "type": "button",
+            "name": "button_home",
+            "width": 668,
+            "width_unit": "px",
+            "height": 56,
+            "height_unit": "px",
+            "x": 120,
+            "x_unit": "px",
+            "y": 407,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#000000",
+                "border_color": "#2f3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRH12QRYFSIR",
+                "type": "image",
+                "name": "image_bt_home",
+                "width": 70,
+                "width_unit": "px",
+                "height": 30,
+                "height_unit": "px",
+                "x": 551,
+                "x_unit": "px",
+                "y": -1,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#fafafa",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/home.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRH0XG3YQSC0",
+            "type": "button",
+            "name": "button_configuracoes_voltar",
+            "width": 100,
+            "width_unit": "px",
+            "height": 56,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 407,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#000000",
+                "border_color": "#2f3539",
+                "border_width": 3,
+                "border_opa": 255
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRH101DB3LW2",
+                "type": "image",
+                "name": "image_bt_voltar",
+                "width": 62,
+                "width_unit": "px",
+                "height": 42,
+                "height_unit": "px",
+                "x": -4,
+                "x_unit": "px",
+                "y": -7,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/seta_esquerda.png"
+              }
+            ]
+          },
+          {
+            "id": "container_MRH0G6QVBPHR",
+            "type": "container",
+            "name": "container_configuracoes",
+            "width": 390,
+            "width_unit": "px",
+            "height": 376,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 16,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#2196f3",
+                "bg_opa": 0,
+                "border_width": 3,
+                "border_color": "#2f3539"
+              }
+            },
+            "children": [
+              {
+                "id": "button_MRH0SAX4W9XN",
+                "type": "button",
+                "name": "button_bluetooth",
+                "width": 358,
+                "width_unit": "px",
+                "height": 50,
+                "height_unit": "px",
+                "x": -6,
+                "x_unit": "px",
+                "y": 54,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "bg_color": "#000000",
+                    "border_width": 3,
+                    "border_color": "#2f3539",
+                    "bg_opa": 0,
+                    "border_opa": 255
+                  }
+                },
+                "children": [
+                  {
+                    "id": "label_MRH0VS81LRA8",
+                    "type": "label",
+                    "name": "label_1",
+                    "width": 0,
+                    "width_unit": "content",
+                    "height": 28,
+                    "height_unit": "px",
+                    "x": 62,
+                    "x_unit": "px",
+                    "y": -3,
+                    "y_unit": "px",
+                    "align": "LV_ALIGN_TOP_LEFT",
+                    "style": {
+                      "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                        "part": "LV_PART_MAIN",
+                        "state": "LV_STATE_DEFAULT",
+                        "text_size": 20
+                      }
+                    },
+                    "text": "Bluetooth\n"
+                  },
+                  {
+                    "id": "image_MRH0UPV92IL7",
+                    "type": "image",
+                    "name": "image_bluetooth",
+                    "width": 62,
+                    "width_unit": "px",
+                    "height": 28,
+                    "height_unit": "px",
+                    "x": -16,
+                    "x_unit": "px",
+                    "y": -3,
+                    "y_unit": "px",
+                    "align": "LV_ALIGN_TOP_LEFT",
+                    "style": {
+                      "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                        "part": "LV_PART_MAIN",
+                        "state": "LV_STATE_DEFAULT",
+                        "recolor": "#ffffff",
+                        "recolor_opa": 255
+                      }
+                    },
+                    "src": "resources/image/bluetooth.png"
+                  }
+                ]
+              },
+              {
+                "id": "button_MRH0HO6YAWA7",
+                "type": "button",
+                "name": "button_wifi",
+                "width": 358,
+                "width_unit": "px",
+                "height": 50,
+                "height_unit": "px",
+                "x": -6,
+                "x_unit": "px",
+                "y": -3,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "bg_color": "#000000",
+                    "border_width": 3,
+                    "border_color": "#2f3539",
+                    "border_opa": 255
+                  }
+                },
+                "children": [
+                  {
+                    "id": "label_MRH0PSSUHA2Y",
+                    "type": "label",
+                    "name": "label_wifi",
+                    "width": 70,
+                    "width_unit": "px",
+                    "height": 24,
+                    "height_unit": "px",
+                    "x": 62,
+                    "x_unit": "px",
+                    "y": -1,
+                    "y_unit": "px",
+                    "align": "LV_ALIGN_TOP_LEFT",
+                    "style": {
+                      "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                        "part": "LV_PART_MAIN",
+                        "state": "LV_STATE_DEFAULT",
+                        "text_color": "#ffffff",
+                        "text_family": "montserratMedium.ttf",
+                        "text_size": 20
+                      }
+                    },
+                    "text": "Wi-Fi"
+                  },
+                  {
+                    "id": "image_MRH0MT5QOTEO",
+                    "type": "image",
+                    "name": "image_wifi",
+                    "width": 48,
+                    "width_unit": "px",
+                    "height": 31,
+                    "height_unit": "px",
+                    "x": -9,
+                    "x_unit": "px",
+                    "y": -4,
+                    "y_unit": "px",
+                    "align": "LV_ALIGN_TOP_LEFT",
+                    "style": {
+                      "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                        "part": "LV_PART_MAIN",
+                        "state": "LV_STATE_DEFAULT",
+                        "recolor": "#ffffff",
+                        "recolor_opa": 255
+                      }
+                    },
+                    "src": "resources/image/wifi.png"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "event_list": {
+      "screen": {}
+    },
+    "variable_setting": {
+      "condition": {},
+      "lv_anim_t": {}
+    }
+  }
+}

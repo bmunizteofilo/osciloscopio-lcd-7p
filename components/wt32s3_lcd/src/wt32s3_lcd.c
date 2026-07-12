@@ -117,7 +117,7 @@ static esp_err_t wt32s3_lcd_create_rgb_panel(wt32s3_lcd_handle_t handle)
         .data_width = 16,
         .bits_per_pixel = WT32S3_LCD_BITS_PER_PIXEL,
         .num_fbs = 2,
-        .bounce_buffer_size_px = WT32S3_LCD_H_RES * 60,
+        .bounce_buffer_size_px = WT32S3_LCD_H_RES * 40,
         .dma_burst_size = 64,
         .hsync_gpio_num = WT32S3_LCD_PIN_HSYNC,
         .vsync_gpio_num = WT32S3_LCD_PIN_VSYNC,
