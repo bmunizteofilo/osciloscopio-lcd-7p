@@ -44,13 +44,19 @@
 #define OSC_WAVEFORM_INNER_HEIGHT (OSC_WAVEFORM_HEIGHT - (OSC_WAVEFORM_BORDER * 2))
 #define OSC_MEASUREMENTS_Y 430
 #define OSC_CHANNEL_ROW_HEIGHT 25
-#define OSC_CHANNEL_INFO_GAP 4
-#define OSC_CHANNEL_INFO_WIDTH ((OSC_SCREEN_WIDTH - OSC_CHANNEL_INFO_GAP) / 2)
+#define OSC_CHANNEL_INFO_WIDTH (OSC_SCREEN_WIDTH / 2)
+#define OSC_MEASUREMENTS_VISIBLE_ROWS 2
+#define OSC_MEASUREMENTS_HEIGHT (OSC_CHANNEL_ROW_HEIGHT * OSC_MEASUREMENTS_VISIBLE_ROWS)
+#define OSC_ACTION_PANEL_X OSC_CHANNEL_INFO_WIDTH
+#define OSC_ACTION_PANEL_WIDTH (OSC_SCREEN_WIDTH - OSC_ACTION_PANEL_X)
+#define OSC_ACTION_BUTTON_GAP 8
+#define OSC_ACTION_BUTTON_WIDTH 125
+#define OSC_ACTION_BUTTON_HEIGHT 42
+#define OSC_ACTION_BUTTON_Y (OSC_MEASUREMENTS_Y + 4)
 #define OSC_CHART_POINT_COUNT OSC_WAVEFORM_INNER_WIDTH
 #define OSC_HISTORY_BYTES_PER_CHANNEL (500U * 1024U)
 #define OSC_HISTORY_SAMPLE_COUNT (OSC_HISTORY_BYTES_PER_CHANNEL / sizeof(uint16_t))
 #define OSC_DEFAULT_INPUT_SAMPLE_RATE_HZ 2000U
-#define OSC_HEAP_LOG_PERIOD_MS 5000
 #define OSC_ADC_CENTER 1024
 #define OSC_ADC_COUNTS_PER_DIV 256
 #define OSC_DEFAULT_TIME_BASE_US_PER_DIV 100000
@@ -75,8 +81,6 @@ typedef enum {
     OSC_THEME_DARK = 0,
     OSC_THEME_LIGHT,
 } osc_theme_t;
-
-#define OSC_MONITOR_HEAP_LOG 0
 
 static const char *TAG = "osc";
 
@@ -135,13 +139,21 @@ typedef struct {
     lv_obj_t *trigger_line;
     lv_obj_t *trigger_marker;
     lv_timer_t *trigger_hide_timer;
+    lv_timer_t *measurement_timer;
     lv_obj_t *backlight_slider;
     lv_obj_t *backlight_label;
     lv_obj_t *measurement_labels[4][5];
+    lv_obj_t *pause_button;
+    lv_obj_t *stop_cycle_button;
+    lv_obj_t *pause_button_label;
+    lv_obj_t *stop_cycle_button_label;
+    lv_timer_t *stop_cycle_blink_timer;
     bool channel_visible[4];
     osc_cursor_mode_t cursor_mode;
     osc_theme_t theme;
     bool paused;
+    bool stop_cycle_requested;
+    bool stop_cycle_blink_on;
     bool trigger_enabled;
     bool trigger_rising;
     bool trigger_single_captured;
@@ -178,6 +190,10 @@ static void osc_update_buffer_label(void);
 static void osc_trigger_edge_event_cb(lv_event_t *event);
 static void osc_trigger_channel_event_cb(lv_event_t *event);
 static void osc_clear_measurements(uint8_t channel);
+static void osc_update_action_buttons(void);
+
+/** @brief Callback registrado pelo fluxo de telas para retornar ao menu principal. */
+static osc_menu_callback_t s_menu_callback;
 
 static uint32_t osc_theme_waveform_bg(void)
 {
@@ -293,6 +309,7 @@ static void osc_run_pause_event_cb(lv_event_t *event)
         s_lvgl.cursor_mode = OSC_CURSOR_MODE_OFF;
     }
     osc_update_cursor_label();
+    osc_update_action_buttons();
 }
 
 /**
@@ -1362,15 +1379,153 @@ static void osc_create_waveform_area(lv_obj_t *parent)
     osc_create_backlight_control(parent);
 }
 
+/** @brief Atualiza as cores dos botões de Pausar e Parar Ciclo. */
+static void osc_update_action_buttons(void)
+{
+    if (s_lvgl.pause_button != NULL) {
+        const uint32_t pause_color = s_lvgl.paused ? 0x00c853 : 0x000000;
+        lv_obj_set_style_bg_color(s_lvgl.pause_button, lv_color_hex(pause_color), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_lvgl.pause_button, s_lvgl.paused ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_MAIN);
+    }
+    if (s_lvgl.pause_button_label != NULL) {
+        lv_label_set_text(s_lvgl.pause_button_label, s_lvgl.paused ? "Pausado" : "Pausar");
+    }
+    if (s_lvgl.stop_cycle_button != NULL) {
+        const uint32_t stop_color = s_lvgl.stop_cycle_requested && !s_lvgl.stop_cycle_blink_on ? 0x5f0000 : 0xc62828;
+        lv_obj_set_style_bg_color(s_lvgl.stop_cycle_button, lv_color_hex(stop_color), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_lvgl.stop_cycle_button, LV_OPA_COVER, LV_PART_MAIN);
+    }
+    if (s_lvgl.stop_cycle_button_label != NULL) {
+        lv_label_set_text(s_lvgl.stop_cycle_button_label,
+                          s_lvgl.stop_cycle_requested ? "Ciclo Parado" : "Parar Ciclo");
+    }
+}
+
+/**
+ * @brief Alterna a indicação visual do pedido de parada de ciclo.
+ *
+ * @param[in] timer Timer LVGL de pisca.
+ */
+static void osc_stop_cycle_blink_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    if (!s_lvgl.stop_cycle_requested) {
+        return;
+    }
+    s_lvgl.stop_cycle_blink_on = !s_lvgl.stop_cycle_blink_on;
+    osc_update_action_buttons();
+}
+
+/**
+ * @brief Alterna a pausa da aquisição quando não há pedido de parada de ciclo.
+ *
+ * @param[in] event Evento LVGL do botão Pausar.
+ */
+static void osc_pause_button_event_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_lvgl.stop_cycle_requested) {
+        return;
+    }
+    s_lvgl.paused = !s_lvgl.paused;
+    s_lvgl.history_view_offset = 0;
+    s_lvgl.history_navigation_started = false;
+    if (!s_lvgl.paused) {
+        s_lvgl.cursor_mode = OSC_CURSOR_MODE_OFF;
+    }
+    osc_update_buffer_label();
+    osc_update_cursor_label();
+    osc_update_action_buttons();
+}
+
+/**
+ * @brief Alterna o pedido de parada de ciclo quando a aquisição não está pausada.
+ *
+ * @param[in] event Evento LVGL do botão Parar Ciclo.
+ */
+static void osc_stop_cycle_button_event_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_lvgl.paused) {
+        return;
+    }
+    s_lvgl.stop_cycle_requested = !s_lvgl.stop_cycle_requested;
+    s_lvgl.stop_cycle_blink_on = true;
+    osc_update_action_buttons();
+}
+
+/**
+ * @brief Retorna ao menu principal pela ação registrada pela aplicação.
+ *
+ * @param[in] event Evento LVGL do botão Menu.
+ */
+static void osc_menu_button_event_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_menu_callback != NULL) {
+        s_menu_callback();
+    }
+}
+
+/**
+ * @brief Cria os três botões de ação na metade inferior direita.
+ *
+ * @param[in] parent Tela principal do osciloscópio.
+ */
+static void osc_create_action_buttons(lv_obj_t *parent)
+{
+    static const char *const labels[] = {"Pausar", "Parar Ciclo", "Menu"};
+    static lv_event_cb_t const callbacks[] = {
+        osc_pause_button_event_cb,
+        osc_stop_cycle_button_event_cb,
+        osc_menu_button_event_cb,
+    };
+    lv_obj_t **const buttons[] = {
+        &s_lvgl.pause_button,
+        &s_lvgl.stop_cycle_button,
+        NULL,
+    };
+    lv_obj_t **const button_labels[] = {
+        &s_lvgl.pause_button_label,
+        &s_lvgl.stop_cycle_button_label,
+        NULL,
+    };
+    for (uint8_t index = 0; index < 3; index++) {
+        lv_obj_t *button = lv_button_create(parent);
+        lv_obj_set_size(button, OSC_ACTION_BUTTON_WIDTH, OSC_ACTION_BUTTON_HEIGHT);
+        lv_obj_set_pos(button, OSC_ACTION_PANEL_X + OSC_ACTION_BUTTON_GAP +
+                                index * (OSC_ACTION_BUTTON_WIDTH + OSC_ACTION_BUTTON_GAP),
+                       OSC_ACTION_BUTTON_Y);
+        lv_obj_set_style_border_width(button, 1, LV_PART_MAIN);
+        lv_obj_set_style_border_color(button, lv_color_hex(0x606060), LV_PART_MAIN);
+        lv_obj_set_style_radius(button, 5, LV_PART_MAIN);
+        lv_obj_add_event_cb(button, callbacks[index], LV_EVENT_CLICKED, NULL);
+        lv_obj_t *label = lv_label_create(button);
+        lv_label_set_text(label, labels[index]);
+        lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+        lv_obj_center(label);
+        if (buttons[index] != NULL) {
+            *buttons[index] = button;
+            *button_labels[index] = label;
+        } else {
+            lv_obj_set_style_bg_color(button, lv_color_hex(0x000000), LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(button, LV_OPA_TRANSP, LV_PART_MAIN);
+        }
+    }
+    s_lvgl.stop_cycle_blink_timer = lv_timer_create(osc_stop_cycle_blink_timer_cb, 500, NULL);
+    osc_update_action_buttons();
+}
+
 /**
  * @brief Cria uma linha de medicoes de canal.
  *
  * @param[in] parent Tela principal.
  * @param[in] channel_index Indice do canal, de 0 a 3.
- * @param[in] column Coluna da linha inferior, de 0 a 1.
+ * A linha é inserida no container vertical de medições da metade esquerda.
+ *
  * @param[in] y Coordenada vertical da linha.
  */
-static void osc_create_measurement_row(lv_obj_t *parent, uint8_t channel_index, uint8_t column, int32_t y)
+static void osc_create_measurement_row(lv_obj_t *parent, uint8_t channel_index, int32_t y)
 {
     const char *texts[] = {
         "RMS 0.00",
@@ -1381,12 +1536,10 @@ static void osc_create_measurement_row(lv_obj_t *parent, uint8_t channel_index, 
     };
     const lv_color_t text_color = lv_color_hex(channel_index == 1 ? 0x000000 : 0xffffff);
 
-    const int32_t x = column == 0 ? 0 : OSC_CHANNEL_INFO_WIDTH + OSC_CHANNEL_INFO_GAP;
-
     lv_obj_t *row = lv_obj_create(parent);
     lv_obj_remove_style_all(row);
     lv_obj_set_size(row, OSC_CHANNEL_INFO_WIDTH, OSC_CHANNEL_ROW_HEIGHT);
-    lv_obj_set_pos(row, x, y);
+    lv_obj_set_pos(row, 0, y);
     lv_obj_set_scroll_dir(row, LV_DIR_HOR);
     lv_obj_set_scrollbar_mode(row, LV_SCROLLBAR_MODE_ACTIVE);
     lv_obj_set_style_bg_color(row, lv_color_hex(OSC_CHANNEL_COLORS[channel_index]), LV_PART_MAIN);
@@ -1508,22 +1661,76 @@ static void osc_measurement_timer_cb(lv_timer_t *timer)
  */
 static void osc_create_measurements(lv_obj_t *parent)
 {
-    osc_create_measurement_row(parent, 0, 0, OSC_MEASUREMENTS_Y);
-    osc_create_measurement_row(parent, 2, 1, OSC_MEASUREMENTS_Y);
-    osc_create_measurement_row(parent, 1, 0, OSC_MEASUREMENTS_Y + OSC_CHANNEL_ROW_HEIGHT);
-    osc_create_measurement_row(parent, 3, 1, OSC_MEASUREMENTS_Y + OSC_CHANNEL_ROW_HEIGHT);
-    lv_timer_create(osc_measurement_timer_cb, 1000, NULL);
+    lv_obj_t *container = lv_obj_create(parent);
+    lv_obj_remove_style_all(container);
+    lv_obj_set_size(container, OSC_CHANNEL_INFO_WIDTH, OSC_MEASUREMENTS_HEIGHT);
+    lv_obj_set_pos(container, 0, OSC_MEASUREMENTS_Y);
+    lv_obj_set_scroll_dir(container, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(container, LV_SCROLLBAR_MODE_ACTIVE);
+    lv_obj_set_style_bg_color(container, lv_color_hex(0x606060), LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(container, LV_OPA_COVER, LV_PART_SCROLLBAR);
+    lv_obj_set_style_width(container, 4, LV_PART_SCROLLBAR);
+    osc_create_measurement_row(container, 0, 0 * OSC_CHANNEL_ROW_HEIGHT);
+    osc_create_measurement_row(container, 1, 1 * OSC_CHANNEL_ROW_HEIGHT);
+    osc_create_measurement_row(container, 2, 2 * OSC_CHANNEL_ROW_HEIGHT);
+    osc_create_measurement_row(container, 3, 3 * OSC_CHANNEL_ROW_HEIGHT);
+    s_lvgl.measurement_timer = lv_timer_create(osc_measurement_timer_cb, 1000, NULL);
 }
 
 /**
- * @brief Cria e carrega a tela inicial do osciloscópio.
+ * @brief Define o painel LCD usado pelos controles do osciloscópio.
+ */
+void osc_set_lcd(wt32s3_lcd_handle_t lcd)
+{
+    s_lvgl.lcd = lcd;
+}
+
+/** @brief Define a ação executada pelo botão Menu do osciloscópio. */
+void osc_set_menu_callback(osc_menu_callback_t callback)
+{
+    s_menu_callback = callback;
+}
+
+/** @brief Destrói a tela do osciloscópio, seus timers e buffers de histórico. */
+void osc_destroy(void)
+{
+    if (s_lvgl.trigger_hide_timer != NULL) {
+        lv_timer_delete(s_lvgl.trigger_hide_timer);
+    }
+    if (s_lvgl.measurement_timer != NULL) {
+        lv_timer_delete(s_lvgl.measurement_timer);
+    }
+    if (s_lvgl.stop_cycle_blink_timer != NULL) {
+        lv_timer_delete(s_lvgl.stop_cycle_blink_timer);
+    }
+    if (s_lvgl.screen != NULL) {
+        lv_obj_delete(s_lvgl.screen);
+    }
+    for (uint8_t channel = 0; channel < 4; channel++) {
+        if (s_lvgl.waveform_samples[channel] != NULL) {
+            heap_caps_free(s_lvgl.waveform_samples[channel]);
+        }
+    }
+    const wt32s3_lcd_handle_t lcd = s_lvgl.lcd;
+    s_lvgl = (osc_context_t){0};
+    s_lvgl.lcd = lcd;
+}
+
+/**
+ * @brief Cria a tela inicial do osciloscópio quando ela ainda não existe.
  *
  * @param[in] lcd Handle do painel usado pelo controle de backlight.
  * @return ESP_OK em sucesso ou ESP_ERR_NO_MEM se a tela não puder ser criada.
  */
 esp_err_t osc_create(wt32s3_lcd_handle_t lcd)
 {
-    s_lvgl.lcd = lcd;
+    if (lcd != NULL) {
+        s_lvgl.lcd = lcd;
+    }
+    ESP_RETURN_ON_FALSE(s_lvgl.lcd != NULL, ESP_ERR_INVALID_STATE, TAG, "painel LCD nao configurado");
+    if (s_lvgl.screen != NULL) {
+        return ESP_OK;
+    }
     s_lvgl.screen = lv_obj_create(NULL);
     if (s_lvgl.screen == NULL) {
         return ESP_ERR_NO_MEM;
@@ -1539,6 +1746,7 @@ esp_err_t osc_create(wt32s3_lcd_handle_t lcd)
     osc_create_information_panels(s_lvgl.screen);
     osc_create_waveform_area(s_lvgl.screen);
     osc_create_measurements(s_lvgl.screen);
+    osc_create_action_buttons(s_lvgl.screen);
     for (uint8_t i = 0; i < 4; i++) {
         if (s_lvgl.channel_buttons[i] != NULL) {
             lv_obj_move_foreground(s_lvgl.channel_buttons[i]);

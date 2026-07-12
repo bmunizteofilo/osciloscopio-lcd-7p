@@ -1,9 +1,15 @@
 #include "ui_flow.h"
 
 #include <string.h>
+#include <time.h>
 #include "esp_check.h"
 #include "gui_guider.h"
 #include "gg_utils.h"
+#include "wifi_manager.h"
+#include "bluetooth_manager.h"
+#include "date_time.h"
+#include "osc.h"
+#include "general_settings.h"
 
 #define UI_FLOW_SPLASH_DURATION_MS 5000U
 #define UI_FLOW_SPLASH_BAR_RADIUS 15
@@ -14,13 +20,890 @@ gg_ui_t guider_ui;
 /** @brief Contexto local do fluxo de telas inicial. */
 typedef struct {
     lv_obj_t *splash_bar;
+    lv_obj_t *wifi_panel;
+    lv_obj_t *wifi_toggle;
+    lv_obj_t *wifi_status;
+    lv_obj_t *wifi_network_list;
+    lv_timer_t *wifi_timer;
+    lv_obj_t *wifi_connection_label;
+    lv_obj_t *wifi_keyboard;
+    lv_obj_t *wifi_password;
+    lv_obj_t *wifi_popup;
+    char wifi_selected_ssid[DRIVER_WIFI_SSID_MAX_LENGTH + 1];
+    wifi_manager_status_t wifi_last_status;
+    bool wifi_status_valid;
+    lv_obj_t *bluetooth_panel;
+    lv_obj_t *bluetooth_toggle;
+    lv_obj_t *bluetooth_status;
+    lv_obj_t *bluetooth_device_list;
+    lv_timer_t *bluetooth_timer;
+    bluetooth_manager_status_t bluetooth_last_status;
+    bool bluetooth_status_valid;
+    lv_timer_t *menu_clock_timer;
+    bool preserve_oscilloscope_screen;
+    lv_obj_t *general_panel;
+    lv_obj_t *general_popup;
+    lv_obj_t *about_panel;
+    lv_obj_t *maintenance_panel;
+    lv_obj_t *general_calendar;
+    lv_obj_t *general_hour_roller;
+    lv_obj_t *general_minute_roller;
+    lv_calendar_date_t general_selected_date;
+    lv_calendar_date_t general_highlighted_date;
 } ui_flow_context_t;
 
 /** @brief Estado persistente da splash e de sua transição. */
 static ui_flow_context_t s_ui_flow;
 
+/** @brief Anos disponíveis para seleção manual no calendário. */
+static const char s_ui_flow_calendar_years[] =
+    "2020\n2021\n2022\n2023\n2024\n2025\n2026\n2027\n2028\n2029\n"
+    "2030\n2031\n2032\n2033\n2034\n2035";
+
 static void ui_flow_show_main_menu(void);
 static void ui_flow_show_settings(void);
+static void ui_flow_destroy_wifi_panel(void);
+static void ui_flow_destroy_bluetooth_panel(void);
+static void ui_flow_destroy_general_panel(void);
+static void ui_flow_destroy_about_panel(void);
+static void ui_flow_destroy_maintenance_panel(void);
+static void ui_flow_oscilloscope_menu_cb(void);
+static void ui_flow_show_general_panel(void);
+
+/** @brief Fecha o diálogo de edição e atualiza os valores apresentados no painel. */
+static void ui_flow_general_close_popup(lv_event_t *event)
+{
+    if (s_ui_flow.general_popup != NULL) {
+        lv_obj_delete(s_ui_flow.general_popup);
+        s_ui_flow.general_popup = NULL;
+        s_ui_flow.general_calendar = NULL;
+        s_ui_flow.general_hour_roller = NULL;
+        s_ui_flow.general_minute_roller = NULL;
+    }
+    if (event != NULL) {
+        ui_flow_show_general_panel();
+    }
+}
+
+/** @brief Aplica o brilho escolhido no slider de parâmetros gerais. */
+static void ui_flow_general_popup_brightness_cb(lv_event_t *event)
+{
+    const uint8_t brightness = (uint8_t)lv_slider_get_value(lv_event_get_target_obj(event));
+    general_settings_set_brightness(brightness);
+    lv_obj_t *value_label = lv_event_get_user_data(event);
+    if (value_label != NULL) {
+        lv_label_set_text_fmt(value_label, "%u%%", (unsigned)brightness);
+    }
+}
+
+/** @brief Armazena a unidade de pressão selecionada no diálogo. */
+static void ui_flow_general_pressure_cb(lv_event_t *event)
+{
+    general_settings_set_pressure_unit(lv_dropdown_get_selected(lv_event_get_target_obj(event)) == 0 ?
+                                           GENERAL_SETTINGS_PRESSURE_BAR : GENERAL_SETTINGS_PRESSURE_PSI);
+}
+
+/** @brief Armazena o volume selecionado no diálogo. */
+static void ui_flow_general_volume_cb(lv_event_t *event)
+{
+    general_settings_set_volume((general_settings_volume_t)lv_dropdown_get_selected(lv_event_get_target_obj(event)));
+}
+
+/** @brief Registra a data escolhida no calendário antes da confirmação. */
+static void ui_flow_general_calendar_cb(lv_event_t *event)
+{
+    lv_calendar_date_t date = {0};
+    lv_obj_t *calendar = (lv_obj_t *)lv_event_get_current_target(event);
+    if (lv_event_get_target_obj(event) != lv_calendar_get_btnmatrix(calendar)) {
+        return;
+    }
+    if (lv_calendar_get_pressed_date(calendar, &date) == LV_RESULT_OK) {
+        s_ui_flow.general_selected_date = date;
+        s_ui_flow.general_highlighted_date = date;
+        lv_calendar_set_highlighted_dates(s_ui_flow.general_calendar, &s_ui_flow.general_highlighted_date, 1);
+    }
+}
+
+/** @brief Confirma a data e a hora selecionadas pelo usuário. */
+static void ui_flow_general_apply_date_time_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_ui_flow.general_selected_date.year == 0 && s_ui_flow.general_calendar != NULL) {
+        const lv_calendar_date_t *shown = lv_calendar_get_showed_date(s_ui_flow.general_calendar);
+        s_ui_flow.general_selected_date = *shown;
+    }
+    if (s_ui_flow.general_selected_date.year != 0) {
+        date_time_set_local(s_ui_flow.general_selected_date.year, s_ui_flow.general_selected_date.month,
+                            s_ui_flow.general_selected_date.day,
+                            lv_roller_get_selected(s_ui_flow.general_hour_roller),
+                            lv_roller_get_selected(s_ui_flow.general_minute_roller));
+    }
+    ui_flow_general_close_popup(event);
+}
+
+/** @brief Aplica a aparência padronizada dos controles de parâmetros gerais. */
+static void ui_flow_general_style_control(lv_obj_t *object)
+{
+    lv_obj_set_style_bg_color(object, lv_color_hex(0x101416), LV_PART_MAIN);
+    lv_obj_set_style_border_color(object, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(object, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(object, 8, LV_PART_MAIN);
+    lv_obj_set_style_text_color(object, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(object, &lv_font_montserratMedium_20, LV_PART_MAIN);
+}
+
+/** @brief Exibe o detalhe da opção geral selecionada. */
+static void ui_flow_general_option_cb(lv_event_t *event)
+{
+    const uint8_t option = (uint8_t)(uintptr_t)lv_event_get_user_data(event);
+    ui_flow_general_close_popup(NULL);
+    s_ui_flow.general_popup = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.general_popup, option == 1 ? 390 : 360, option == 1 ? 450 : 240); lv_obj_center(s_ui_flow.general_popup);
+    lv_obj_set_style_bg_color(s_ui_flow.general_popup, lv_color_hex(0x101416), LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.general_popup, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.general_popup, 2, LV_PART_MAIN);
+    const char *titles[] = {"Idioma", "Data e Hora", "Unidade de Pressao", "Brilho da Tela", "Volume / Beep"};
+    lv_obj_t *title = lv_label_create(s_ui_flow.general_popup); lv_label_set_text(title, titles[option]);
+    lv_obj_set_style_text_font(title, &lv_font_montserratMedium_20, LV_PART_MAIN); lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), LV_PART_MAIN); lv_obj_set_pos(title, 16, 16);
+    if (option == 1) {
+        const time_t now = time(NULL);
+        struct tm local_time = {0};
+        localtime_r(&now, &local_time);
+        s_ui_flow.general_selected_date = (lv_calendar_date_t){.year = (uint16_t)(local_time.tm_year + 1900),
+                                                               .month = (uint8_t)(local_time.tm_mon + 1),
+                                                               .day = (uint8_t)local_time.tm_mday};
+        s_ui_flow.general_highlighted_date = s_ui_flow.general_selected_date;
+        s_ui_flow.general_calendar = lv_calendar_create(s_ui_flow.general_popup);
+        lv_obj_set_size(s_ui_flow.general_calendar, 330, 245); lv_obj_set_pos(s_ui_flow.general_calendar, 10, 48);
+        lv_calendar_set_today_date(s_ui_flow.general_calendar, s_ui_flow.general_selected_date.year,
+                                   s_ui_flow.general_selected_date.month, s_ui_flow.general_selected_date.day);
+        lv_calendar_set_month_shown(s_ui_flow.general_calendar, s_ui_flow.general_selected_date.year,
+                                    s_ui_flow.general_selected_date.month);
+        lv_calendar_set_highlighted_dates(s_ui_flow.general_calendar, &s_ui_flow.general_highlighted_date, 1);
+        lv_obj_t *calendar_header = lv_calendar_add_header_dropdown(s_ui_flow.general_calendar);
+        lv_calendar_header_dropdown_set_year_list(s_ui_flow.general_calendar, s_ui_flow_calendar_years);
+        lv_obj_send_event(calendar_header, LV_EVENT_VALUE_CHANGED, NULL);
+        lv_obj_add_event_cb(s_ui_flow.general_calendar, ui_flow_general_calendar_cb, LV_EVENT_VALUE_CHANGED, NULL);
+        lv_obj_t *time_label = lv_label_create(s_ui_flow.general_popup); lv_label_set_text(time_label, "Hora"); lv_obj_set_style_text_color(time_label, lv_color_hex(0xffffff), LV_PART_MAIN); lv_obj_set_pos(time_label, 32, 310);
+        s_ui_flow.general_hour_roller = lv_roller_create(s_ui_flow.general_popup);
+        lv_obj_set_size(s_ui_flow.general_hour_roller, 90, 58); lv_obj_set_pos(s_ui_flow.general_hour_roller, 75, 328);
+        lv_roller_set_options(s_ui_flow.general_hour_roller, "00\n01\n02\n03\n04\n05\n06\n07\n08\n09\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23", LV_ROLLER_MODE_NORMAL);
+        lv_roller_set_selected(s_ui_flow.general_hour_roller, (uint32_t)local_time.tm_hour, LV_ANIM_OFF);
+        lv_obj_t *minute_label = lv_label_create(s_ui_flow.general_popup); lv_label_set_text(minute_label, "Min"); lv_obj_set_style_text_color(minute_label, lv_color_hex(0xffffff), LV_PART_MAIN); lv_obj_set_pos(minute_label, 212, 310);
+        s_ui_flow.general_minute_roller = lv_roller_create(s_ui_flow.general_popup);
+        lv_obj_set_size(s_ui_flow.general_minute_roller, 90, 58); lv_obj_set_pos(s_ui_flow.general_minute_roller, 235, 328);
+        lv_roller_set_options(s_ui_flow.general_minute_roller, "00\n01\n02\n03\n04\n05\n06\n07\n08\n09\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40\n41\n42\n43\n44\n45\n46\n47\n48\n49\n50\n51\n52\n53\n54\n55\n56\n57\n58\n59", LV_ROLLER_MODE_NORMAL);
+        lv_roller_set_selected(s_ui_flow.general_minute_roller, (uint32_t)local_time.tm_min, LV_ANIM_OFF);
+        lv_obj_t *apply = lv_button_create(s_ui_flow.general_popup); lv_obj_set_size(apply, 100, 36); lv_obj_set_pos(apply, 228, 400); ui_flow_general_style_control(apply); lv_obj_add_event_cb(apply, ui_flow_general_apply_date_time_cb, LV_EVENT_CLICKED, NULL); lv_obj_t *label = lv_label_create(apply); lv_label_set_text(label, "Aplicar"); lv_obj_center(label);
+        return;
+    }
+    if (option == 3) { lv_obj_t *slider = lv_slider_create(s_ui_flow.general_popup); lv_obj_set_size(slider, 300, 20); lv_obj_set_pos(slider, 16, 75); lv_slider_set_range(slider, 10, 100); lv_slider_set_value(slider, general_settings_get_brightness(), LV_ANIM_OFF); lv_obj_t *value_label = lv_label_create(s_ui_flow.general_popup); lv_label_set_text_fmt(value_label, "%u%%", (unsigned)general_settings_get_brightness()); lv_obj_set_style_text_color(value_label, lv_color_hex(0xffffff), LV_PART_MAIN); lv_obj_align_to(value_label, slider, LV_ALIGN_OUT_BOTTOM_MID, 0, 12); lv_obj_add_event_cb(slider, ui_flow_general_popup_brightness_cb, LV_EVENT_VALUE_CHANGED, value_label); }
+    else { lv_obj_t *choice = lv_dropdown_create(s_ui_flow.general_popup); lv_obj_set_size(choice, 300, 42); lv_obj_set_pos(choice, 16, 75); ui_flow_general_style_control(choice); lv_dropdown_set_options(choice, option == 0 ? "Portugues" : option == 2 ? "bar\npsi" : "Baixo\nMedio\nAlto"); if (option == 2) { lv_dropdown_set_selected(choice, general_settings_get_pressure_unit()); lv_obj_add_event_cb(choice, ui_flow_general_pressure_cb, LV_EVENT_VALUE_CHANGED, NULL); } else if (option == 4) { lv_dropdown_set_selected(choice, general_settings_get_volume()); lv_obj_add_event_cb(choice, ui_flow_general_volume_cb, LV_EVENT_VALUE_CHANGED, NULL); } }
+    lv_obj_t *close = lv_button_create(s_ui_flow.general_popup); lv_obj_set_size(close, 100, 36); lv_obj_align(close, LV_ALIGN_BOTTOM_RIGHT, -12, -12); ui_flow_general_style_control(close); lv_obj_add_event_cb(close, ui_flow_general_close_popup, LV_EVENT_CLICKED, NULL); lv_obj_t *label = lv_label_create(close); lv_label_set_text(label, "OK"); lv_obj_center(label);
+}
+
+/** @brief Cria uma linha compacta de opção no estilo da lista de parâmetros. */
+static void ui_flow_general_row(lv_obj_t *parent, const char *name, const char *value, int32_t y, uint8_t option)
+{
+    lv_obj_t *row = lv_button_create(parent);
+    lv_obj_set_size(row, 340, 50);
+    lv_obj_set_pos(row, 15, y);
+    ui_flow_general_style_control(row);
+    lv_obj_add_event_cb(row, ui_flow_general_option_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)option);
+    lv_obj_t *name_label = lv_label_create(row);
+    lv_label_set_text(name_label, name);
+    lv_obj_set_style_text_color(name_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(name_label, &lv_font_montserratMedium_20, LV_PART_MAIN);
+    lv_obj_align(name_label, LV_ALIGN_LEFT_MID, 10, 0);
+    lv_obj_t *value_label = lv_label_create(row);
+    lv_label_set_text(value_label, value);
+    lv_obj_set_style_text_color(value_label, lv_color_hex(0xd0d0d0), LV_PART_MAIN);
+    lv_obj_set_style_text_font(value_label, &lv_font_montserratMedium_20, LV_PART_MAIN);
+    lv_obj_align(value_label, LV_ALIGN_RIGHT_MID, -25, 0);
+    lv_obj_t *arrow = lv_label_create(row);
+    lv_label_set_text(arrow, ">");
+    lv_obj_set_style_text_color(arrow, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -10, 0);
+}
+
+/** @brief Mostra os controles dos parâmetros gerais no painel direito. */
+static void ui_flow_show_general_panel(void)
+{
+    ui_flow_destroy_wifi_panel();
+    ui_flow_destroy_bluetooth_panel();
+    ui_flow_destroy_about_panel();
+    ui_flow_destroy_maintenance_panel();
+    ui_flow_destroy_general_panel();
+    s_ui_flow.general_panel = lv_obj_create(guider_ui.screen_configuracoes.screen);
+    lv_obj_set_size(s_ui_flow.general_panel, 370, 376);
+    lv_obj_set_pos(s_ui_flow.general_panel, 420, 21);
+    lv_obj_set_style_bg_color(s_ui_flow.general_panel, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.general_panel, 3, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.general_panel, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_radius(s_ui_flow.general_panel, 7, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_ui_flow.general_panel, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(s_ui_flow.general_panel, LV_OBJ_FLAG_SCROLLABLE);
+    char brightness[8] = {0};
+    lv_snprintf(brightness, sizeof(brightness), "%u%%", (unsigned)general_settings_get_brightness());
+    const char *volume = general_settings_get_volume() == GENERAL_SETTINGS_VOLUME_LOW ? "Baixo" :
+                         general_settings_get_volume() == GENERAL_SETTINGS_VOLUME_HIGH ? "Alto" : "Medio";
+    const char *pressure = general_settings_get_pressure_unit() == GENERAL_SETTINGS_PRESSURE_PSI ? "psi" : "bar";
+    ui_flow_general_row(s_ui_flow.general_panel, "Idioma", general_settings_get_language(), 14, 0);
+    ui_flow_general_row(s_ui_flow.general_panel, "Data e Hora", "", 70, 1);
+    ui_flow_general_row(s_ui_flow.general_panel, "Unidade de Pressao", pressure, 126, 2);
+    ui_flow_general_row(s_ui_flow.general_panel, "Brilho da Tela", brightness, 182, 3);
+    ui_flow_general_row(s_ui_flow.general_panel, "Volume / Beep", volume, 238, 4);
+}
+
+/** @brief Abre os parâmetros gerais ao tocar na opção correspondente. */
+static void ui_flow_general_button_cb(lv_event_t *event) { (void)event; ui_flow_show_general_panel(); }
+
+/** @brief Libera o painel de parâmetros gerais antes de trocar o conteúdo direito. */
+static void ui_flow_destroy_general_panel(void)
+{
+    ui_flow_general_close_popup(NULL);
+    if (s_ui_flow.general_panel != NULL) {
+        lv_obj_delete(s_ui_flow.general_panel);
+        s_ui_flow.general_panel = NULL;
+    }
+}
+
+/** @brief Libera o painel de informações do equipamento. */
+static void ui_flow_destroy_about_panel(void)
+{
+    if (s_ui_flow.about_panel != NULL) {
+        lv_obj_delete(s_ui_flow.about_panel);
+        s_ui_flow.about_panel = NULL;
+    }
+}
+
+/** @brief Cria uma linha informativa sem ação no painel Sobre o equipamento. */
+static void ui_flow_about_row(lv_obj_t *parent, const char *text, int32_t y)
+{
+    lv_obj_t *row = lv_button_create(parent);
+    lv_obj_set_size(row, 340, 50);
+    lv_obj_set_pos(row, 15, y);
+    ui_flow_general_style_control(row);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_t *label = lv_label_create(row);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, &lv_font_montserratMedium_20, LV_PART_MAIN);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 10, 0);
+}
+
+/** @brief Exibe as informações estáticas da versão do equipamento. */
+static void ui_flow_show_about_panel(void)
+{
+    ui_flow_destroy_wifi_panel();
+    ui_flow_destroy_bluetooth_panel();
+    ui_flow_destroy_general_panel();
+    ui_flow_destroy_about_panel();
+    ui_flow_destroy_maintenance_panel();
+    s_ui_flow.about_panel = lv_obj_create(guider_ui.screen_configuracoes.screen);
+    lv_obj_set_size(s_ui_flow.about_panel, 370, 376);
+    lv_obj_set_pos(s_ui_flow.about_panel, 420, 21);
+    lv_obj_set_style_bg_color(s_ui_flow.about_panel, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.about_panel, 3, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.about_panel, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_radius(s_ui_flow.about_panel, 7, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_ui_flow.about_panel, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(s_ui_flow.about_panel, LV_OBJ_FLAG_SCROLLABLE);
+    ui_flow_about_row(s_ui_flow.about_panel, "MA-02 PIEZZO 6B", 14);
+    ui_flow_about_row(s_ui_flow.about_panel, "Firmware: 1.0.0", 70);
+    ui_flow_about_row(s_ui_flow.about_panel, "Data: 12/07/2026", 126);
+}
+
+/** @brief Abre o painel Sobre o equipamento ao tocar na opção correspondente. */
+static void ui_flow_about_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_about_panel();
+}
+
+/** @brief Mantém preparada a ação futura de uma opção de manutenção. */
+static void ui_flow_maintenance_option_cb(lv_event_t *event)
+{
+    (void)event;
+}
+
+/** @brief Cria uma opção clicável no painel de manutenção. */
+static void ui_flow_maintenance_row(lv_obj_t *parent, const char *text, int32_t y)
+{
+    lv_obj_t *row = lv_button_create(parent);
+    lv_obj_set_size(row, 340, 50);
+    lv_obj_set_pos(row, 15, y);
+    ui_flow_general_style_control(row);
+    lv_obj_add_event_cb(row, ui_flow_maintenance_option_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label = lv_label_create(row);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, &lv_font_montserratMedium_20, LV_PART_MAIN);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 10, 0);
+    lv_obj_t *arrow = lv_label_create(row);
+    lv_label_set_text(arrow, ">");
+    lv_obj_set_style_text_color(arrow, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -10, 0);
+}
+
+/** @brief Libera o painel de manutenção antes da troca de conteúdo direito. */
+static void ui_flow_destroy_maintenance_panel(void)
+{
+    if (s_ui_flow.maintenance_panel != NULL) {
+        lv_obj_delete(s_ui_flow.maintenance_panel);
+        s_ui_flow.maintenance_panel = NULL;
+    }
+}
+
+/** @brief Exibe as opções disponíveis de manutenção e calibração. */
+static void ui_flow_show_maintenance_panel(void)
+{
+    ui_flow_destroy_wifi_panel();
+    ui_flow_destroy_bluetooth_panel();
+    ui_flow_destroy_general_panel();
+    ui_flow_destroy_about_panel();
+    ui_flow_destroy_maintenance_panel();
+    s_ui_flow.maintenance_panel = lv_obj_create(guider_ui.screen_configuracoes.screen);
+    lv_obj_set_size(s_ui_flow.maintenance_panel, 370, 376);
+    lv_obj_set_pos(s_ui_flow.maintenance_panel, 420, 21);
+    lv_obj_set_style_bg_color(s_ui_flow.maintenance_panel, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.maintenance_panel, 3, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.maintenance_panel, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_radius(s_ui_flow.maintenance_panel, 7, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_ui_flow.maintenance_panel, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(s_ui_flow.maintenance_panel, LV_OBJ_FLAG_SCROLLABLE);
+    ui_flow_maintenance_row(s_ui_flow.maintenance_panel, "Calibracao de Pressao", 14);
+    ui_flow_maintenance_row(s_ui_flow.maintenance_panel, "Teste de Bomba", 70);
+    ui_flow_maintenance_row(s_ui_flow.maintenance_panel, "Teste de Dreno", 126);
+    ui_flow_maintenance_row(s_ui_flow.maintenance_panel, "Teste de Ultrassom", 182);
+    ui_flow_maintenance_row(s_ui_flow.maintenance_panel, "Teste das Saidas (Bicos)", 238);
+    ui_flow_maintenance_row(s_ui_flow.maintenance_panel, "Leitura de Sensores", 294);
+}
+
+/** @brief Abre o painel de manutenção ao tocar na opção correspondente. */
+static void ui_flow_maintenance_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_maintenance_panel();
+}
+
+/** @brief Atualiza os labels de data e hora enquanto o menu principal está ativo. */
+static void ui_flow_menu_clock_update_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    if (!date_time_is_synchronized() || guider_ui.screen_menu_principal.label_menu_principal_hora == NULL ||
+        guider_ui.screen_menu_principal.label_menu_principal_data == NULL) {
+        return;
+    }
+    char time_text[6] = {0};
+    char date_text[11] = {0};
+    date_time_format_time(time_text, sizeof(time_text));
+    date_time_format_date(date_text, sizeof(date_text));
+    lv_label_set_text(guider_ui.screen_menu_principal.label_menu_principal_hora, time_text);
+    lv_label_set_text(guider_ui.screen_menu_principal.label_menu_principal_data, date_text);
+}
+
+/** @brief Fecha o teclado local de credenciais Wi-Fi. */
+static void ui_flow_close_wifi_keyboard(void)
+{
+    if (s_ui_flow.wifi_keyboard != NULL) {
+        lv_obj_delete(s_ui_flow.wifi_keyboard);
+        s_ui_flow.wifi_keyboard = NULL;
+        s_ui_flow.wifi_password = NULL;
+    }
+}
+
+/** @brief Fecha o popup local de erro Wi-Fi. */
+static void ui_flow_close_wifi_popup(void)
+{
+    if (s_ui_flow.wifi_popup != NULL) {
+        lv_obj_delete(s_ui_flow.wifi_popup);
+        s_ui_flow.wifi_popup = NULL;
+    }
+}
+
+/**
+ * @brief Fecha o teclado ao cancelar a edição de senha.
+ *
+ * @param[in] event Evento LVGL de cancelamento.
+ */
+static void ui_flow_wifi_keyboard_cancel_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_wifi_keyboard();
+}
+
+/**
+ * @brief Fecha o popup de erro ao tocar em seu botão.
+ *
+ * @param[in] event Evento LVGL do botão.
+ */
+static void ui_flow_wifi_popup_close_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_wifi_popup();
+}
+
+/**
+ * @brief Exibe um popup local informando falha de autenticação/conexão.
+ */
+static void ui_flow_show_wifi_error(void)
+{
+    if (s_ui_flow.wifi_popup != NULL) {
+        return;
+    }
+    s_ui_flow.wifi_popup = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.wifi_popup, 360, 150);
+    lv_obj_center(s_ui_flow.wifi_popup);
+    lv_obj_set_style_bg_color(s_ui_flow.wifi_popup, lv_color_hex(0x202020), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.wifi_popup, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.wifi_popup, lv_color_hex(0xc62828), LV_PART_MAIN);
+    lv_obj_t *title = lv_label_create(s_ui_flow.wifi_popup);
+    lv_label_set_text(title, "Falha ao conectar");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xff5252), LV_PART_MAIN);
+    lv_obj_set_pos(title, 16, 16);
+    lv_obj_t *message = lv_label_create(s_ui_flow.wifi_popup);
+    lv_label_set_text(message, "Verifique a senha e tente novamente.");
+    lv_obj_set_style_text_color(message, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_pos(message, 16, 52);
+    lv_obj_t *close = lv_button_create(s_ui_flow.wifi_popup);
+    lv_obj_set_size(close, 100, 36);
+    lv_obj_align(close, LV_ALIGN_BOTTOM_RIGHT, -12, 2);
+    lv_obj_add_event_cb(close, ui_flow_wifi_popup_close_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label = lv_label_create(close);
+    lv_label_set_text(label, "OK");
+    lv_obj_center(label);
+}
+
+/**
+ * @brief Envia as credenciais digitadas ao gerenciador Wi-Fi do core 0.
+ *
+ * @param[in] event Evento de confirmação do teclado.
+ */
+static void ui_flow_wifi_connect_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_ui_flow.wifi_password != NULL) {
+        wifi_manager_connect(s_ui_flow.wifi_selected_ssid, lv_textarea_get_text(s_ui_flow.wifi_password));
+    }
+    ui_flow_close_wifi_keyboard();
+}
+
+/**
+ * @brief Cria teclado de senha na metade inferior da tela.
+ *
+ * @param[in] ssid SSID selecionado na lista de redes.
+ */
+static void ui_flow_show_wifi_keyboard(const char *ssid)
+{
+    ui_flow_close_wifi_keyboard();
+    strncpy(s_ui_flow.wifi_selected_ssid, ssid, DRIVER_WIFI_SSID_MAX_LENGTH);
+    s_ui_flow.wifi_selected_ssid[DRIVER_WIFI_SSID_MAX_LENGTH] = '\0';
+    s_ui_flow.wifi_keyboard = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.wifi_keyboard, 800, 350);
+    lv_obj_set_pos(s_ui_flow.wifi_keyboard, 0, 130);
+    lv_obj_set_style_bg_color(s_ui_flow.wifi_keyboard, lv_color_hex(0x111111), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.wifi_keyboard, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.wifi_keyboard, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_t *title = lv_label_create(s_ui_flow.wifi_keyboard);
+    lv_label_set_text_fmt(title, "Senha: %s", s_ui_flow.wifi_selected_ssid);
+    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_pos(title, 16, 5);
+    s_ui_flow.wifi_password = lv_textarea_create(s_ui_flow.wifi_keyboard);
+    lv_obj_set_size(s_ui_flow.wifi_password, 500, 42);
+    lv_obj_set_pos(s_ui_flow.wifi_password, 16, 27);
+    lv_textarea_set_password_mode(s_ui_flow.wifi_password, true);
+    lv_textarea_set_one_line(s_ui_flow.wifi_password, true);
+    lv_obj_t *keyboard = lv_keyboard_create(s_ui_flow.wifi_keyboard);
+    lv_obj_set_size(keyboard, 760, 220);
+    lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_keyboard_set_textarea(keyboard, s_ui_flow.wifi_password);
+    lv_obj_add_event_cb(keyboard, ui_flow_wifi_connect_cb, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(keyboard, ui_flow_wifi_keyboard_cancel_cb, LV_EVENT_CANCEL, NULL);
+}
+
+/**
+ * @brief Verifica se o estado Wi-Fi mudou desde a última atualização visual.
+ *
+ * @param[in] status Estado mais recente do gerenciador Wi-Fi.
+ * @return @c true se a interface precisa ser redesenhada.
+ */
+static bool ui_flow_wifi_status_changed(const wifi_manager_status_t *status)
+{
+    if (!s_ui_flow.wifi_status_valid || status->enabled != s_ui_flow.wifi_last_status.enabled ||
+        status->scanning != s_ui_flow.wifi_last_status.scanning ||
+        status->connected != s_ui_flow.wifi_last_status.connected ||
+        status->connecting != s_ui_flow.wifi_last_status.connecting ||
+        status->connection_failed != s_ui_flow.wifi_last_status.connection_failed ||
+        strcmp(status->connected_ssid, s_ui_flow.wifi_last_status.connected_ssid) != 0 ||
+        status->network_count != s_ui_flow.wifi_last_status.network_count) {
+        return true;
+    }
+    for (uint16_t index = 0; index < status->network_count; index++) {
+        const driver_wifi_network_t *current = &status->networks[index];
+        const driver_wifi_network_t *previous = &s_ui_flow.wifi_last_status.networks[index];
+        if (current->rssi != previous->rssi || current->secured != previous->secured || strcmp(current->ssid, previous->ssid) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Abre o teclado ao selecionar uma rede da lista.
+ *
+ * @param[in] event Evento LVGL do item de rede.
+ */
+static void ui_flow_wifi_network_cb(lv_event_t *event)
+{
+    ui_flow_show_wifi_keyboard(lv_event_get_user_data(event));
+}
+
+/**
+ * @brief Atualiza o estado e a lista rolável de redes no painel Wi-Fi.
+ *
+ * @param[in] timer Timer LVGL associado ao painel.
+ */
+static void ui_flow_wifi_update_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    if (s_ui_flow.wifi_panel == NULL || s_ui_flow.wifi_status == NULL || s_ui_flow.wifi_network_list == NULL) {
+        return;
+    }
+    wifi_manager_status_t status = {0};
+    if (wifi_manager_get_status(&status) != ESP_OK) {
+        return;
+    }
+    if (!ui_flow_wifi_status_changed(&status)) {
+        return;
+    }
+    s_ui_flow.wifi_last_status = status;
+    s_ui_flow.wifi_status_valid = true;
+    if (status.connection_failed) {
+        ui_flow_close_wifi_keyboard();
+        ui_flow_show_wifi_error();
+    }
+    if (s_ui_flow.wifi_toggle != NULL) {
+        if (status.enabled) {
+            lv_obj_add_state(s_ui_flow.wifi_toggle, LV_STATE_CHECKED);
+        } else {
+            lv_obj_remove_state(s_ui_flow.wifi_toggle, LV_STATE_CHECKED);
+        }
+    }
+    if (!status.enabled) {
+        lv_label_set_text(s_ui_flow.wifi_connection_label, "");
+        lv_obj_set_x(s_ui_flow.wifi_status, 16);
+        lv_label_set_text(s_ui_flow.wifi_status, "Wi-Fi desligado");
+    } else if (status.scanning) {
+        lv_label_set_text(s_ui_flow.wifi_connection_label, "");
+        lv_obj_set_x(s_ui_flow.wifi_status, 16);
+        lv_label_set_text(s_ui_flow.wifi_status, "Procurando redes...");
+    } else if (status.connecting) {
+        lv_label_set_text(s_ui_flow.wifi_connection_label, "");
+        lv_obj_set_x(s_ui_flow.wifi_status, 16);
+        lv_label_set_text_fmt(s_ui_flow.wifi_status, "Conectando: %s", status.connected_ssid);
+    } else if (status.connected) {
+        lv_label_set_text(s_ui_flow.wifi_connection_label, "Conectado");
+        lv_obj_set_x(s_ui_flow.wifi_status, 116);
+        lv_label_set_text(s_ui_flow.wifi_status, status.connected_ssid);
+    } else {
+        lv_label_set_text(s_ui_flow.wifi_connection_label, "");
+        lv_obj_set_x(s_ui_flow.wifi_status, 16);
+        lv_label_set_text(s_ui_flow.wifi_status, "Nenhuma rede conectada");
+    }
+    lv_obj_clean(s_ui_flow.wifi_network_list);
+    uint16_t displayed_networks = 0;
+    for (uint16_t index = 0; index < status.network_count; index++) {
+        if (status.connected && strcmp(status.networks[index].ssid, status.connected_ssid) == 0) {
+            continue;
+        }
+        displayed_networks++;
+    }
+    if (status.enabled && !status.scanning && displayed_networks == 0) {
+        lv_obj_t *empty = lv_label_create(s_ui_flow.wifi_network_list);
+        lv_label_set_text(empty, "Nenhuma rede encontrada");
+        lv_obj_set_style_text_color(empty, lv_color_hex(0xffffff), LV_PART_MAIN);
+    }
+    for (uint16_t index = 0; index < status.network_count; index++) {
+        if (status.connected && strcmp(status.networks[index].ssid, status.connected_ssid) == 0) {
+            continue;
+        }
+        lv_obj_t *network = lv_button_create(s_ui_flow.wifi_network_list);
+        lv_obj_add_event_cb(network, ui_flow_wifi_network_cb, LV_EVENT_CLICKED, s_ui_flow.wifi_last_status.networks[index].ssid);
+        lv_obj_set_size(network, LV_PCT(100), 40);
+        lv_obj_set_style_bg_color(network, lv_color_hex(0x202020), LV_PART_MAIN);
+        lv_obj_set_style_border_width(network, 1, LV_PART_MAIN);
+        lv_obj_set_style_border_color(network, lv_color_hex(0x2f3539), LV_PART_MAIN);
+        lv_obj_t *network_label = lv_label_create(network);
+        lv_label_set_text_fmt(network_label, "%s  %ddBm%s", status.networks[index].ssid, status.networks[index].rssi,
+                              status.networks[index].secured ? "  *" : "");
+        lv_obj_set_width(network_label, LV_PCT(92));
+        lv_obj_set_style_text_color(network_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+        lv_obj_center(network_label);
+    }
+}
+
+/** @brief Verifica se o estado Bluetooth mudou desde a última atualização visual. */
+static bool ui_flow_bluetooth_status_changed(const bluetooth_manager_status_t *status)
+{
+    if (!s_ui_flow.bluetooth_status_valid || status->enabled != s_ui_flow.bluetooth_last_status.enabled ||
+        status->scanning != s_ui_flow.bluetooth_last_status.scanning ||
+        status->device_count != s_ui_flow.bluetooth_last_status.device_count) {
+        return true;
+    }
+    for (uint16_t index = 0; index < status->device_count; index++) {
+        const driver_bluetooth_device_t *current = &status->devices[index];
+        const driver_bluetooth_device_t *previous = &s_ui_flow.bluetooth_last_status.devices[index];
+        if (current->rssi != previous->rssi || strcmp(current->name, previous->name) != 0 ||
+            strcmp(current->address, previous->address) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @brief Atualiza o estado e a lista rolável de dispositivos Bluetooth encontrados. */
+static void ui_flow_bluetooth_update_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    if (s_ui_flow.bluetooth_panel == NULL || s_ui_flow.bluetooth_status == NULL ||
+        s_ui_flow.bluetooth_device_list == NULL) {
+        return;
+    }
+    bluetooth_manager_status_t status = {0};
+    if (bluetooth_manager_get_status(&status) != ESP_OK || !ui_flow_bluetooth_status_changed(&status)) {
+        return;
+    }
+    s_ui_flow.bluetooth_last_status = status;
+    s_ui_flow.bluetooth_status_valid = true;
+    if (s_ui_flow.bluetooth_toggle != NULL) {
+        if (status.enabled) {
+            lv_obj_add_state(s_ui_flow.bluetooth_toggle, LV_STATE_CHECKED);
+        } else {
+            lv_obj_remove_state(s_ui_flow.bluetooth_toggle, LV_STATE_CHECKED);
+        }
+    }
+    lv_label_set_text(s_ui_flow.bluetooth_status, !status.enabled ? "Bluetooth desligado" :
+                      status.scanning ? "Procurando dispositivos..." : "Dispositivos encontrados");
+    lv_obj_clean(s_ui_flow.bluetooth_device_list);
+    if (status.enabled && status.device_count == 0) {
+        lv_obj_t *empty = lv_label_create(s_ui_flow.bluetooth_device_list);
+        lv_label_set_text(empty, status.scanning ? "Nenhum dispositivo ainda" : "Nenhum dispositivo encontrado");
+        lv_obj_set_style_text_color(empty, lv_color_hex(0xffffff), LV_PART_MAIN);
+    }
+    for (uint16_t index = 0; index < status.device_count; index++) {
+        lv_obj_t *device = lv_button_create(s_ui_flow.bluetooth_device_list);
+        lv_obj_set_size(device, LV_PCT(100), 40);
+        lv_obj_set_style_bg_color(device, lv_color_hex(0x202020), LV_PART_MAIN);
+        lv_obj_set_style_border_width(device, 1, LV_PART_MAIN);
+        lv_obj_set_style_border_color(device, lv_color_hex(0x2f3539), LV_PART_MAIN);
+        lv_obj_t *label = lv_label_create(device);
+        lv_label_set_text_fmt(label, "%s  %ddBm", status.devices[index].name, status.devices[index].rssi);
+        lv_obj_set_width(label, LV_PCT(92));
+        lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+        lv_obj_center(label);
+    }
+}
+
+/** @brief Encaminha a mudança do toggle Bluetooth ao gerenciador no core 0. */
+static void ui_flow_bluetooth_toggle_cb(lv_event_t *event)
+{
+    lv_obj_t *toggle = lv_event_get_target_obj(event);
+    const bool enabled = lv_obj_has_state(toggle, LV_STATE_CHECKED);
+    if (!enabled) {
+        lv_label_set_text(s_ui_flow.bluetooth_status, "Bluetooth desligado");
+        lv_obj_clean(s_ui_flow.bluetooth_device_list);
+        s_ui_flow.bluetooth_last_status = (bluetooth_manager_status_t){0};
+        s_ui_flow.bluetooth_status_valid = true;
+    }
+    bluetooth_manager_set_enabled(enabled);
+}
+
+/** @brief Cria o painel local e rolável de informações Bluetooth. */
+static void ui_flow_show_bluetooth_panel(void)
+{
+    ui_flow_destroy_wifi_panel();
+    ui_flow_destroy_general_panel();
+    ui_flow_destroy_about_panel();
+    ui_flow_destroy_maintenance_panel();
+    if (bluetooth_manager_start() != ESP_OK) {
+        return;
+    }
+    lv_obj_t *screen = guider_ui.screen_configuracoes.screen;
+    s_ui_flow.bluetooth_panel = lv_obj_create(screen);
+    lv_obj_set_size(s_ui_flow.bluetooth_panel, 370, 376);
+    lv_obj_set_pos(s_ui_flow.bluetooth_panel, 420, 21);
+    lv_obj_set_style_bg_color(s_ui_flow.bluetooth_panel, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_ui_flow.bluetooth_panel, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.bluetooth_panel, 3, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.bluetooth_panel, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_radius(s_ui_flow.bluetooth_panel, 7, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_ui_flow.bluetooth_panel, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(s_ui_flow.bluetooth_panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *header = lv_button_create(s_ui_flow.bluetooth_panel);
+    lv_obj_set_size(header, 340, 50);
+    lv_obj_set_pos(header, 15, 13);
+    lv_obj_set_style_bg_color(header, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_border_width(header, 3, LV_PART_MAIN);
+    lv_obj_set_style_border_color(header, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_t *title = lv_label_create(header);
+    lv_label_set_text(title, "Bluetooth");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(title, LV_ALIGN_LEFT_MID, 14, 0);
+    s_ui_flow.bluetooth_toggle = lv_switch_create(header);
+    lv_obj_align(s_ui_flow.bluetooth_toggle, LV_ALIGN_RIGHT_MID, -14, 0);
+    lv_obj_set_style_bg_color(s_ui_flow.bluetooth_toggle, lv_color_hex(0x263238), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(s_ui_flow.bluetooth_toggle, lv_color_hex(0x00c853), LV_PART_MAIN | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(s_ui_flow.bluetooth_toggle, lv_color_hex(0x455a64), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(s_ui_flow.bluetooth_toggle, ui_flow_bluetooth_toggle_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    s_ui_flow.bluetooth_status = lv_label_create(s_ui_flow.bluetooth_panel);
+    lv_obj_set_pos(s_ui_flow.bluetooth_status, 16, 72);
+    lv_obj_set_style_text_color(s_ui_flow.bluetooth_status, lv_color_hex(0xffffff), LV_PART_MAIN);
+    s_ui_flow.bluetooth_device_list = lv_obj_create(s_ui_flow.bluetooth_panel);
+    lv_obj_set_size(s_ui_flow.bluetooth_device_list, 340, 270);
+    lv_obj_align(s_ui_flow.bluetooth_device_list, LV_ALIGN_TOP_MID, 0, 94);
+    lv_obj_set_style_bg_color(s_ui_flow.bluetooth_device_list, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.bluetooth_device_list, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_ui_flow.bluetooth_device_list, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_ui_flow.bluetooth_device_list, lv_color_hex(0x455a64), LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(s_ui_flow.bluetooth_device_list, LV_OPA_COVER, LV_PART_SCROLLBAR);
+    s_ui_flow.bluetooth_timer = lv_timer_create(ui_flow_bluetooth_update_cb, 500, NULL);
+    s_ui_flow.bluetooth_status_valid = false;
+    ui_flow_bluetooth_update_cb(s_ui_flow.bluetooth_timer);
+}
+
+/** @brief Libera o painel Bluetooth e seu timer antes de trocar de conteúdo. */
+static void ui_flow_destroy_bluetooth_panel(void)
+{
+    if (s_ui_flow.bluetooth_timer != NULL) {
+        lv_timer_delete(s_ui_flow.bluetooth_timer);
+        s_ui_flow.bluetooth_timer = NULL;
+    }
+    if (s_ui_flow.bluetooth_panel != NULL) {
+        lv_obj_delete(s_ui_flow.bluetooth_panel);
+    }
+    s_ui_flow.bluetooth_panel = NULL;
+    s_ui_flow.bluetooth_toggle = NULL;
+    s_ui_flow.bluetooth_status = NULL;
+    s_ui_flow.bluetooth_device_list = NULL;
+    s_ui_flow.bluetooth_status_valid = false;
+}
+
+/**
+ * @brief Encaminha a mudança do toggle ao gerenciador Wi-Fi no core 0.
+ *
+ * @param[in] event Evento de valor alterado do switch LVGL.
+ */
+static void ui_flow_wifi_toggle_cb(lv_event_t *event)
+{
+    lv_obj_t *toggle = lv_event_get_target_obj(event);
+    wifi_manager_set_enabled(lv_obj_has_state(toggle, LV_STATE_CHECKED));
+}
+
+/**
+ * @brief Cria o painel local e rolável de informações de Wi-Fi.
+ */
+static void ui_flow_show_wifi_panel(void)
+{
+    ui_flow_destroy_bluetooth_panel();
+    ui_flow_destroy_wifi_panel();
+    ui_flow_destroy_general_panel();
+    ui_flow_destroy_about_panel();
+    ui_flow_destroy_maintenance_panel();
+    lv_obj_t *screen = guider_ui.screen_configuracoes.screen;
+    s_ui_flow.wifi_panel = lv_obj_create(screen);
+    lv_obj_set_size(s_ui_flow.wifi_panel, 370, 376);
+    lv_obj_set_pos(s_ui_flow.wifi_panel, 420, 21);
+    lv_obj_set_style_bg_color(s_ui_flow.wifi_panel, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_ui_flow.wifi_panel, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.wifi_panel, 3, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.wifi_panel, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_radius(s_ui_flow.wifi_panel, 7, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_ui_flow.wifi_panel, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(s_ui_flow.wifi_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *header = lv_button_create(s_ui_flow.wifi_panel);
+    lv_obj_set_size(header, 340, 50);
+    lv_obj_set_pos(header, 15, 13);
+    lv_obj_set_style_bg_color(header, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_border_width(header, 3, LV_PART_MAIN);
+    lv_obj_set_style_border_color(header, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_t *title = lv_label_create(header);
+    lv_label_set_text(title, "Wi-Fi");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(title, LV_ALIGN_LEFT_MID, 16, 0);
+    s_ui_flow.wifi_toggle = lv_switch_create(header);
+    lv_obj_align(s_ui_flow.wifi_toggle, LV_ALIGN_RIGHT_MID, -16, 0);
+    lv_obj_set_style_bg_color(s_ui_flow.wifi_toggle, lv_color_hex(0x263238), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(s_ui_flow.wifi_toggle, lv_color_hex(0x455a64), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(s_ui_flow.wifi_toggle, lv_color_hex(0x00c853), LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_add_event_cb(s_ui_flow.wifi_toggle, ui_flow_wifi_toggle_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    s_ui_flow.wifi_connection_label = lv_label_create(s_ui_flow.wifi_panel);
+    lv_obj_set_pos(s_ui_flow.wifi_connection_label, 16, 70);
+    lv_obj_set_style_text_color(s_ui_flow.wifi_connection_label, lv_color_hex(0x00c853), LV_PART_MAIN);
+    s_ui_flow.wifi_status = lv_label_create(s_ui_flow.wifi_panel);
+    lv_obj_set_pos(s_ui_flow.wifi_status, 116, 70);
+    lv_obj_set_style_text_color(s_ui_flow.wifi_status, lv_color_hex(0xffffff), LV_PART_MAIN);
+    s_ui_flow.wifi_network_list = lv_obj_create(s_ui_flow.wifi_panel);
+    lv_obj_set_size(s_ui_flow.wifi_network_list, 340, 270);
+    lv_obj_align(s_ui_flow.wifi_network_list, LV_ALIGN_TOP_MID, 0, 94);
+    lv_obj_set_flex_flow(s_ui_flow.wifi_network_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(s_ui_flow.wifi_network_list, LV_DIR_VER);
+    lv_obj_set_style_bg_opa(s_ui_flow.wifi_network_list, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.wifi_network_list, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(s_ui_flow.wifi_network_list, 4, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_ui_flow.wifi_network_list, lv_color_hex(0x455a64), LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(s_ui_flow.wifi_network_list, LV_OPA_COVER, LV_PART_SCROLLBAR);
+    s_ui_flow.wifi_timer = lv_timer_create(ui_flow_wifi_update_cb, 500, NULL);
+    s_ui_flow.wifi_status_valid = false;
+    ui_flow_wifi_update_cb(s_ui_flow.wifi_timer);
+}
+
+/**
+ * @brief Libera o painel Wi-Fi e seu timer antes de trocar de tela.
+ */
+static void ui_flow_destroy_wifi_panel(void)
+{
+    ui_flow_close_wifi_keyboard();
+    ui_flow_close_wifi_popup();
+    if (s_ui_flow.wifi_timer != NULL) {
+        lv_timer_delete(s_ui_flow.wifi_timer);
+        s_ui_flow.wifi_timer = NULL;
+    }
+    if (s_ui_flow.wifi_panel != NULL) {
+        lv_obj_delete(s_ui_flow.wifi_panel);
+    }
+    s_ui_flow.wifi_panel = NULL;
+    s_ui_flow.wifi_toggle = NULL;
+    s_ui_flow.wifi_status = NULL;
+    s_ui_flow.wifi_connection_label = NULL;
+    s_ui_flow.wifi_network_list = NULL;
+    s_ui_flow.wifi_status_valid = false;
+}
+
+/**
+ * @brief Abre o painel Wi-Fi ao tocar na opção correspondente.
+ *
+ * @param[in] event Evento LVGL do botão Wi-Fi.
+ */
+static void ui_flow_wifi_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_wifi_panel();
+}
+
+/**
+ * @brief Abre o painel Bluetooth ao tocar na opção correspondente.
+ *
+ * @param[in] event Evento LVGL do botão Bluetooth.
+ */
+static void ui_flow_bluetooth_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_destroy_bluetooth_panel();
+    ui_flow_show_bluetooth_panel();
+}
 
 /**
  * @brief Abre a tela de configurações ao tocar no botão do menu principal.
@@ -45,6 +928,35 @@ static void ui_flow_main_menu_button_cb(lv_event_t *event)
 }
 
 /**
+ * @brief Cria sob demanda e carrega a tela do osciloscópio.
+ *
+ * @param[in] event Evento LVGL dos botões Modo Teste ou Limpeza de Bicos.
+ */
+static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_destroy_wifi_panel();
+    ui_flow_destroy_bluetooth_panel();
+    if (s_ui_flow.menu_clock_timer != NULL) {
+        lv_timer_delete(s_ui_flow.menu_clock_timer);
+        s_ui_flow.menu_clock_timer = NULL;
+    }
+    osc_set_menu_callback(ui_flow_oscilloscope_menu_cb);
+    if (osc_create(NULL) != ESP_OK || osc_get_screen() == NULL) {
+        return;
+    }
+    lv_screen_load_anim(osc_get_screen(), LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+}
+
+/** @brief Retorna do osciloscópio ao menu sem destruir sua tela persistente. */
+static void ui_flow_oscilloscope_menu_cb(void)
+{
+    s_ui_flow.preserve_oscilloscope_screen = true;
+    ui_flow_show_main_menu();
+    osc_destroy();
+}
+
+/**
  * @brief Cria, conecta e carrega o menu principal.
  *
  * A tela anterior é removida após a troca para não manter objetos LVGL
@@ -52,6 +964,17 @@ static void ui_flow_main_menu_button_cb(lv_event_t *event)
  */
 static void ui_flow_show_main_menu(void)
 {
+    ui_flow_destroy_general_panel();
+    ui_flow_destroy_about_panel();
+    ui_flow_destroy_maintenance_panel();
+    const bool delete_previous_screen = !s_ui_flow.preserve_oscilloscope_screen;
+    s_ui_flow.preserve_oscilloscope_screen = false;
+    ui_flow_destroy_wifi_panel();
+    ui_flow_destroy_bluetooth_panel();
+    if (s_ui_flow.menu_clock_timer != NULL) {
+        lv_timer_delete(s_ui_flow.menu_clock_timer);
+        s_ui_flow.menu_clock_timer = NULL;
+    }
     memset(&guider_ui.screen_menu_principal, 0, sizeof(guider_ui.screen_menu_principal));
     setup_screen_menu_principal(&guider_ui);
     if (guider_ui.screen_menu_principal.screen == NULL) {
@@ -63,7 +986,21 @@ static void ui_flow_show_main_menu(void)
                             LV_EVENT_CLICKED,
                             NULL);
     }
-    lv_screen_load_anim(guider_ui.screen_menu_principal.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+    if (guider_ui.screen_menu_principal.button_modo_teste != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_menu_principal.button_modo_teste,
+                            ui_flow_oscilloscope_button_cb,
+                            LV_EVENT_CLICKED,
+                            NULL);
+    }
+    if (guider_ui.screen_menu_principal.button_limpeza_bico != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_menu_principal.button_limpeza_bico,
+                            ui_flow_oscilloscope_button_cb,
+                            LV_EVENT_CLICKED,
+                            NULL);
+    }
+    s_ui_flow.menu_clock_timer = lv_timer_create(ui_flow_menu_clock_update_cb, 1000, NULL);
+    ui_flow_menu_clock_update_cb(s_ui_flow.menu_clock_timer);
+    lv_screen_load_anim(guider_ui.screen_menu_principal.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, delete_previous_screen);
 }
 
 /**
@@ -73,6 +1010,10 @@ static void ui_flow_show_main_menu(void)
  */
 static void ui_flow_show_settings(void)
 {
+    if (s_ui_flow.menu_clock_timer != NULL) {
+        lv_timer_delete(s_ui_flow.menu_clock_timer);
+        s_ui_flow.menu_clock_timer = NULL;
+    }
     memset(&guider_ui.screen_configuracoes, 0, sizeof(guider_ui.screen_configuracoes));
     setup_screen_configuracoes(&guider_ui);
     if (guider_ui.screen_configuracoes.screen == NULL) {
@@ -90,6 +1031,31 @@ static void ui_flow_show_settings(void)
                             LV_EVENT_CLICKED,
                             NULL);
     }
+    if (guider_ui.screen_configuracoes.container_configuracoes_button_wifi != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_configuracoes.container_configuracoes_button_wifi,
+                            ui_flow_wifi_button_cb,
+                            LV_EVENT_CLICKED,
+                            NULL);
+    }
+    if (guider_ui.screen_configuracoes.container_configuracoes_button_bluetooth != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_configuracoes.container_configuracoes_button_bluetooth,
+                            ui_flow_bluetooth_button_cb,
+                            LV_EVENT_CLICKED,
+                            NULL);
+    }
+    if (guider_ui.screen_configuracoes.button_parametros_gerais != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_configuracoes.button_parametros_gerais,
+                            ui_flow_general_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_configuracoes.button_sobre != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_configuracoes.button_sobre,
+                            ui_flow_about_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_configuracoes.button_manutencao != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_configuracoes.button_manutencao,
+                            ui_flow_maintenance_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    ui_flow_show_wifi_panel();
     lv_screen_load_anim(guider_ui.screen_configuracoes.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
 

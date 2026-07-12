@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_check.h"
+#include "nvs_flash.h"
 #include "esp_log.h"
 #include "driver_i2c.h"
 #include "driver_spi.h"
@@ -11,6 +12,9 @@
 #include "aw9523b.h"
 #include "gt911_touch.h"
 #include "wt32s3_lcd.h"
+#include "wifi_manager.h"
+#include "date_time.h"
+#include "general_settings.h"
 
 #define APP_I2C_SCL_GPIO DRIVER_GPIO_NUM_47
 #define APP_I2C_SDA_GPIO DRIVER_GPIO_NUM_48
@@ -189,6 +193,12 @@ static esp_err_t app_spi_start_supervisor(driver_spi_device_handle_t device)
 esp_err_t app_init(void)
 {
     ESP_LOGI(TAG, "Inicializando WT32S3-07S");
+    esp_err_t nvs_err = nvs_flash_init();
+    if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_RETURN_ON_ERROR(nvs_flash_erase(), TAG, "falha ao recuperar NVS");
+        nvs_err = nvs_flash_init();
+    }
+    ESP_RETURN_ON_ERROR(nvs_err, TAG, "falha ao inicializar NVS");
     driver_i2c_bus_handle_t i2c_bus = NULL;
     ESP_RETURN_ON_ERROR(app_i2c_init(&i2c_bus), TAG, "falha ao inicializar I2C");
 
@@ -207,6 +217,7 @@ esp_err_t app_init(void)
     wt32s3_lcd_handle_t lcd = NULL;
     ESP_RETURN_ON_ERROR(wt32s3_lcd_init(io_expander, &lcd), TAG, "falha ao inicializar LCD");
     ESP_RETURN_ON_ERROR(wt32s3_lcd_set_backlight(lcd, 80), TAG, "falha ao ajustar backlight");
+    ESP_RETURN_ON_ERROR(general_settings_init(lcd), TAG, "falha ao iniciar parametros gerais");
 
     gt911_touch_handle_t touch = NULL;
     const gt911_touch_config_t touch_config = {
@@ -215,6 +226,8 @@ esp_err_t app_init(void)
     };
     ESP_RETURN_ON_ERROR(gt911_touch_init(&touch_config, &touch), TAG, "falha ao inicializar GT911");
     ESP_RETURN_ON_ERROR(app_lvgl_init(lcd, touch), TAG, "falha ao inicializar LVGL");
+    ESP_RETURN_ON_ERROR(wifi_manager_start(), TAG, "falha ao iniciar gerenciador Wi-Fi");
+    ESP_RETURN_ON_ERROR(date_time_start(), TAG, "falha ao iniciar servico de data e hora");
     ESP_LOGI(TAG, "Inicializacao concluida; framebuffer RGB esta na PSRAM externa");
     return ESP_OK;
 }

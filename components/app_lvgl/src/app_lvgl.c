@@ -2,14 +2,17 @@
 
 #include "esp_attr.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_rgb.h"
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
 #include "ui_flow.h"
+#include "osc.h"
 
 /** @brief Periodo do tick entregue ao LVGL, em milissegundos. */
 #define APP_LVGL_TICK_PERIOD_MS 1
@@ -19,6 +22,14 @@
 #define APP_LVGL_TASK_PRIORITY 4
 /** @brief Intervalo entre chamadas do manipulador LVGL. */
 #define APP_LVGL_TASK_DELAY_MS 5
+/** @brief Habilita o monitor periódico de heap interna e PSRAM. */
+#define APP_LVGL_MONITOR_HEAP_LOG 1
+/** @brief Período entre registros do monitor de memória. */
+#define APP_LVGL_HEAP_LOG_PERIOD_MS 5000
+/** @brief Tamanho da pilha da task opcional de monitoramento. */
+#define APP_LVGL_MEMORY_MONITOR_STACK_SIZE 2048
+/** @brief Prioridade da task opcional de monitoramento. */
+#define APP_LVGL_MEMORY_MONITOR_PRIORITY 2
 
 /** @brief Recursos de infraestrutura usados pela porta LVGL. */
 typedef struct {
@@ -28,10 +39,14 @@ typedef struct {
     lv_indev_t *input;
     SemaphoreHandle_t lock;
     TaskHandle_t task;
+    TaskHandle_t memory_monitor_task;
 } app_lvgl_context_t;
 
 /** @brief Contexto único da infraestrutura LVGL. */
 static app_lvgl_context_t s_lvgl = {0};
+
+/** @brief Tag usada nos registros da infraestrutura LVGL. */
+static const char *TAG = "app_lvgl";
 
 /** @brief Obtém exclusividade para chamadas à API LVGL. */
 static void app_lvgl_lock(void)
@@ -130,6 +145,28 @@ static void app_lvgl_task(void *arg)
     }
 }
 
+#if APP_LVGL_MONITOR_HEAP_LOG
+/**
+ * @brief Registra periodicamente a memória livre interna e na PSRAM.
+ *
+ * @param[in] arg Contexto não utilizado.
+ */
+static void app_lvgl_memory_monitor_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        const size_t internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        const size_t internal_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        const size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        const size_t psram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        ESP_LOGI(TAG, "heap interna: livre=%u maior=%u | PSRAM: livre=%u maior=%u",
+                 (unsigned)internal_free, (unsigned)internal_largest,
+                 (unsigned)psram_free, (unsigned)psram_largest);
+        vTaskDelay(pdMS_TO_TICKS(APP_LVGL_HEAP_LOG_PERIOD_MS));
+    }
+}
+#endif
+
 /**
  * @brief Registra o display RGB e seus dois framebuffers diretos no LVGL.
  *
@@ -181,6 +218,7 @@ esp_err_t app_lvgl_init(wt32s3_lcd_handle_t lcd, gt911_touch_handle_t touch)
     ESP_RETURN_ON_FALSE(lcd != NULL && touch != NULL, ESP_ERR_INVALID_ARG, "app_lvgl", "handles invalidos");
     s_lvgl.lcd = lcd;
     s_lvgl.touch = touch;
+    osc_set_lcd(lcd);
     s_lvgl.lock = xSemaphoreCreateMutex();
     ESP_RETURN_ON_FALSE(s_lvgl.lock != NULL, ESP_ERR_NO_MEM, "app_lvgl", "falha ao criar mutex");
     lv_init();
@@ -201,5 +239,16 @@ esp_err_t app_lvgl_init(wt32s3_lcd_handle_t lcd, gt911_touch_handle_t touch)
                                                  APP_LVGL_TASK_PRIORITY,
                                                  &s_lvgl.task,
                                                  1);
-    return created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+    ESP_RETURN_ON_FALSE(created == pdPASS, ESP_ERR_NO_MEM, TAG, "falha ao criar task LVGL");
+#if APP_LVGL_MONITOR_HEAP_LOG
+    created = xTaskCreatePinnedToCore(app_lvgl_memory_monitor_task,
+                                      "mem_mon",
+                                      APP_LVGL_MEMORY_MONITOR_STACK_SIZE,
+                                      NULL,
+                                      APP_LVGL_MEMORY_MONITOR_PRIORITY,
+                                      &s_lvgl.memory_monitor_task,
+                                      1);
+    ESP_RETURN_ON_FALSE(created == pdPASS, ESP_ERR_NO_MEM, TAG, "falha ao criar monitor de memoria");
+#endif
+    return ESP_OK;
 }

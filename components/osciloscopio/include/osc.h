@@ -9,12 +9,39 @@ extern "C" {
 #endif
 
 /**
+ * @brief Define o painel LCD usado pelos controles do osciloscópio.
+ *
+ * A configuração não cria objetos LVGL nem aloca o histórico de amostras.
+ *
+ * @param[in] lcd Handle do painel RGB da aplicação.
+ */
+void osc_set_lcd(wt32s3_lcd_handle_t lcd);
+
+/** @brief Função chamada pelo botão Menu do osciloscópio. */
+typedef void (*osc_menu_callback_t)(void);
+
+/**
+ * @brief Define a ação executada pelo botão Menu do osciloscópio.
+ *
+ * @param[in] callback Função de retorno para a tela principal.
+ */
+void osc_set_menu_callback(osc_menu_callback_t callback);
+
+/**
  * @brief Cria a interface do osciloscópio.
  *
- * @param[in] lcd Handle do painel usado para controlar o backlight.
+ * @param[in] lcd Handle do painel usado para controlar o backlight ou @c NULL
+ * quando o painel foi definido previamente por @ref osc_set_lcd.
  * @return ESP_OK em sucesso ou ESP_ERR_NO_MEM se a tela não puder ser criada.
  */
 esp_err_t osc_create(wt32s3_lcd_handle_t lcd);
+
+/**
+ * @brief Destrói a tela do osciloscópio, seus timers e buffers de histórico.
+ *
+ * A tela não deve estar ativa no momento da chamada.
+ */
+void osc_destroy(void);
 
 /**
  * @brief Retorna a tela criada pelo componente do osciloscópio.

@@ -4,6 +4,8 @@ set(EXTRA_COMPONENT_DIRS
     Drivers/i2c
     Drivers/gpio
     Drivers/spi
+    Drivers/wifi
+    Drivers/bluetooth
     gui_guider_mb
 )
 
