@@ -119,7 +119,7 @@ void setup_screen_bicos_step_two(gg_ui_t * ui)
     lv_obj_set_height(ui->screen_bicos_step_two.button_modo_manual, 320);
     lv_obj_set_align(ui->screen_bicos_step_two.button_modo_manual, LV_ALIGN_TOP_LEFT);
     lv_obj_set_x(ui->screen_bicos_step_two.button_modo_manual, 10);
-    lv_obj_set_y(ui->screen_bicos_step_two.button_modo_manual, 80);
+    lv_obj_set_y(ui->screen_bicos_step_two.button_modo_manual, 84);
 
     // Style: ui->screen_bicos_step_two.button_modo_manual [LV_PART_MAIN|LV_STATE_DEFAULT]
     lv_obj_set_style_bg_color(ui->screen_bicos_step_two.button_modo_manual, lv_color_hex(0x101416),
@@ -165,7 +165,7 @@ void setup_screen_bicos_step_two(gg_ui_t * ui)
     lv_obj_set_height(ui->screen_bicos_step_two.button_modo_automatico, 320);
     lv_obj_set_align(ui->screen_bicos_step_two.button_modo_automatico, LV_ALIGN_TOP_LEFT);
     lv_obj_set_x(ui->screen_bicos_step_two.button_modo_automatico, 405);
-    lv_obj_set_y(ui->screen_bicos_step_two.button_modo_automatico, 80);
+    lv_obj_set_y(ui->screen_bicos_step_two.button_modo_automatico, 84);
 
     // Style: ui->screen_bicos_step_two.button_modo_automatico [LV_PART_MAIN|LV_STATE_DEFAULT]
     lv_obj_set_style_bg_color(ui->screen_bicos_step_two.button_modo_automatico, lv_color_hex(0x101416),

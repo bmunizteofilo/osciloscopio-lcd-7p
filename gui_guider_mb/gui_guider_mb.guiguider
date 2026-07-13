@@ -6,7 +6,7 @@
   "toolVendor": "NXP Semiconductors",
   "createDate": "2026-07-11",
   "createVersion": "2.0.0",
-  "lastModified": "2026-07-13T14:45:40.675Z",
+  "lastModified": "2026-07-13T17:49:40.690Z",
   "description": "",
   "metadata": {
     "board": {
@@ -1634,7 +1634,7 @@
             "height_unit": "px",
             "x": 405,
             "x_unit": "px",
-            "y": 80,
+            "y": 84,
             "y_unit": "px",
             "align": "LV_ALIGN_TOP_LEFT",
             "style": {
@@ -1705,7 +1705,7 @@
             "height_unit": "px",
             "x": 10,
             "x_unit": "px",
-            "y": 80,
+            "y": 84,
             "y_unit": "px",
             "align": "LV_ALIGN_TOP_LEFT",
             "style": {
@@ -1886,6 +1886,619 @@
                     "part": "LV_PART_MAIN",
                     "state": "LV_STATE_DEFAULT",
                     "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/seta_esquerda.png"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "screen_3imal4h",
+        "name": "screen_bicos_step_config_manual",
+        "type": "screen",
+        "style": {
+          "LV_PART_MAIN|LV_STATE_DEFAULT": {
+            "part": "LV_PART_MAIN",
+            "state": "LV_STATE_DEFAULT",
+            "bg_color": "#000000"
+          }
+        },
+        "children": [
+          {
+            "id": "button_MRJEZ5LO0077",
+            "type": "button",
+            "name": "button_temperatura",
+            "width": 385,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 405,
+            "x_unit": "px",
+            "y": 275,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJFYXX23TRY",
+                "type": "label",
+                "name": "label_bt_value_temperatura",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 240,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "45 C           >"
+              },
+              {
+                "id": "label_MRJFMV7IKVY7",
+                "type": "label",
+                "name": "label_bt_temperatura",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": -7,
+                "x_unit": "px",
+                "y": -4,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 25
+                  }
+                },
+                "text": "Temperatura"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJEYV44A4BK",
+            "type": "button",
+            "name": "button_tempo_de_pausa",
+            "width": 385,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 405,
+            "x_unit": "px",
+            "y": 215,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJFXOEU0LDN",
+                "type": "label",
+                "name": "label_bt_value_tempo_de_pausa",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 240,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "10000 ms  >"
+              },
+              {
+                "id": "label_MRJFM3H31ZNX",
+                "type": "label",
+                "name": "label_bt_tempo_de_pause",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": -7,
+                "x_unit": "px",
+                "y": -4,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 25
+                  }
+                },
+                "text": "Tempo De Pausa"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJEYG4CB3Q0",
+            "type": "button",
+            "name": "button_ciclos",
+            "width": 385,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 405,
+            "x_unit": "px",
+            "y": 155,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJFWD35L2B2",
+                "type": "label",
+                "name": "label_bt_value_ciclos",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 240,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "10000         >"
+              },
+              {
+                "id": "label_MRJFK8S2VT70",
+                "type": "label",
+                "name": "label_bt_ciclos",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": -7,
+                "x_unit": "px",
+                "y": -4,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 25
+                  }
+                },
+                "text": "Ciclos"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJEY21SK6QM",
+            "type": "button",
+            "name": "button_rpm",
+            "width": 385,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 275,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJFV34BVRY9",
+                "type": "label",
+                "name": "label_bt_value_rpm",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 240,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "10000        >"
+              },
+              {
+                "id": "label_MRJFJL53NLI5",
+                "type": "label",
+                "name": "label_bt_rpm",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": -8,
+                "x_unit": "px",
+                "y": -4,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 25
+                  }
+                },
+                "text": "RPM"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJEXUZ62U3C",
+            "type": "button",
+            "name": "button_pulso_ms",
+            "width": 385,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 215,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJFT65EK2GY",
+                "type": "label",
+                "name": "label_bt_value_pulso",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 240,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "4.00ms      >"
+              },
+              {
+                "id": "label_MRJFIK9JG9QH",
+                "type": "label",
+                "name": "label_bt_pulso_ms",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": -8,
+                "x_unit": "px",
+                "y": -4,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 25
+                  }
+                },
+                "text": "Pulso"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJEWZYYABXU",
+            "type": "button",
+            "name": "button_pressao",
+            "width": 385,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 155,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJFRZ0JCGPO",
+                "type": "label",
+                "name": "label_bt_value_pressao",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 240,
+                "x_unit": "px",
+                "y": 0,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "150 bar       >"
+              },
+              {
+                "id": "label_MRJFHJJ2XSX3",
+                "type": "label",
+                "name": "label_bt_pressao",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": -8,
+                "x_unit": "px",
+                "y": -4,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 25
+                  }
+                },
+                "text": "Pressão"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJEMHARWR10",
+            "type": "button",
+            "name": "button_top",
+            "width": 780,
+            "width_unit": "px",
+            "height": 60,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 10,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "add_flag": [],
+            "remove_flag": [
+              "LV_OBJ_FLAG_CLICKABLE",
+              "LV_OBJ_FLAG_CLICK_FOCUSABLE"
+            ],
+            "children": [
+              {
+                "id": "label_MRJENMQVVKCA",
+                "type": "label",
+                "name": "label_bt_top",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 179,
+                "x_unit": "px",
+                "y": -2,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 30
+                  }
+                },
+                "text": "PARÂMETROS DE CICLO"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJCOKZ7IRUB",
+            "type": "button",
+            "name": "button_nothing",
+            "width": 463,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 125,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "add_flag": [],
+            "remove_flag": [
+              "LV_OBJ_FLAG_CLICKABLE",
+              "LV_OBJ_FLAG_CLICK_FOCUSABLE"
+            ]
+          },
+          {
+            "id": "button_MRJCO1EDKNJS",
+            "type": "button",
+            "name": "button_avancar",
+            "width": 188,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 602,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#09572e",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJEQYCTUVX6",
+                "type": "label",
+                "name": "label_bt_avancar",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 19,
+                "x_unit": "px",
+                "y": -1,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 20
+                  }
+                },
+                "text": "AVANÇAR"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJCNHOSN94A",
+            "type": "button",
+            "name": "button_voltar",
+            "width": 100,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJCRB6ILWC1",
+                "type": "image",
+                "name": "image_bt_voltar",
+                "width": 50,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 2,
+                "x_unit": "px",
+                "y": -9,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#f4f4f4",
                     "recolor_opa": 255
                   }
                 },

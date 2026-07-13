@@ -136,6 +136,35 @@ typedef struct {
 } gg_screen_bicos_step_two_t;
 
 typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * button_temperatura;
+    lv_obj_t * button_temperatura_label_bt_value_temperatura;
+    lv_obj_t * button_temperatura_label_bt_temperatura;
+    lv_obj_t * button_tempo_de_pausa;
+    lv_obj_t * button_tempo_de_pausa_label_bt_value_tempo_de_pausa;
+    lv_obj_t * button_tempo_de_pausa_label_bt_tempo_de_pause;
+    lv_obj_t * button_ciclos;
+    lv_obj_t * button_ciclos_label_bt_value_ciclos;
+    lv_obj_t * button_ciclos_label_bt_ciclos;
+    lv_obj_t * button_rpm;
+    lv_obj_t * button_rpm_label_bt_value_rpm;
+    lv_obj_t * button_rpm_label_bt_rpm;
+    lv_obj_t * button_pulso_ms;
+    lv_obj_t * button_pulso_ms_label_bt_value_pulso;
+    lv_obj_t * button_pulso_ms_label_bt_pulso_ms;
+    lv_obj_t * button_pressao;
+    lv_obj_t * button_pressao_label_bt_value_pressao;
+    lv_obj_t * button_pressao_label_bt_pressao;
+    lv_obj_t * button_top;
+    lv_obj_t * button_top_label_bt_top;
+    lv_obj_t * button_nothing;
+    lv_obj_t * button_avancar;
+    lv_obj_t * button_avancar_label_bt_avancar;
+    lv_obj_t * button_voltar;
+    lv_obj_t * button_voltar_image_bt_voltar;
+} gg_screen_bicos_step_config_manual_t;
+
+typedef struct {
     gg_layer_sys_t layer_sys;
     gg_layer_top_t layer_top;
     gg_layer_bottom_t layer_bottom;
@@ -144,6 +173,7 @@ typedef struct {
     gg_screen_configuracoes_t screen_configuracoes;
     gg_screen_bicos_step_one_t screen_bicos_step_one;
     gg_screen_bicos_step_two_t screen_bicos_step_two;
+    gg_screen_bicos_step_config_manual_t screen_bicos_step_config_manual;
 } gg_ui_t;
 
 typedef struct {
@@ -165,6 +195,7 @@ void setup_screen_menu_principal(gg_ui_t * ui);
 void setup_screen_configuracoes(gg_ui_t * ui);
 void setup_screen_bicos_step_one(gg_ui_t * ui);
 void setup_screen_bicos_step_two(gg_ui_t * ui);
+void setup_screen_bicos_step_config_manual(gg_ui_t * ui);
 
 #ifdef __cplusplus
 }

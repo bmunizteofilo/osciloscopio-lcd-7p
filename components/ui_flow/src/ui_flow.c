@@ -14,6 +14,16 @@
 #define UI_FLOW_SPLASH_DURATION_MS 5000U
 #define UI_FLOW_SPLASH_BAR_RADIUS 15
 
+/** @brief Identificadores dos parâmetros ajustáveis do modo manual. */
+typedef enum {
+    UI_FLOW_MANUAL_PRESSURE,
+    UI_FLOW_MANUAL_PULSE,
+    UI_FLOW_MANUAL_RPM,
+    UI_FLOW_MANUAL_CYCLES,
+    UI_FLOW_MANUAL_PAUSE,
+    UI_FLOW_MANUAL_TEMPERATURE
+} ui_flow_manual_setting_t;
+
 /** @brief Instância exigida pelo código exportado pelo NXP GUI Guider. */
 gg_ui_t guider_ui;
 
@@ -50,10 +60,26 @@ typedef struct {
     lv_obj_t *general_minute_roller;
     lv_calendar_date_t general_selected_date;
     lv_calendar_date_t general_highlighted_date;
+    lv_obj_t *manual_popup;
+    lv_obj_t *manual_popup_value;
+    ui_flow_manual_setting_t manual_active_setting;
+    int32_t manual_pressure;
+    int32_t manual_pulse;
+    int32_t manual_rpm;
+    int32_t manual_cycles;
+    int32_t manual_pause;
+    int32_t manual_temperature;
 } ui_flow_context_t;
 
 /** @brief Estado persistente da splash e de sua transição. */
-static ui_flow_context_t s_ui_flow;
+static ui_flow_context_t s_ui_flow = {
+    .manual_pressure = 1,
+    .manual_pulse = 1,
+    .manual_rpm = 500,
+    .manual_cycles = 1,
+    .manual_pause = 100,
+    .manual_temperature = 25
+};
 
 /** @brief Anos disponíveis para seleção manual no calendário. */
 static const char s_ui_flow_calendar_years[] =
@@ -64,6 +90,7 @@ static void ui_flow_show_main_menu(void);
 static void ui_flow_show_settings(void);
 static void ui_flow_show_bicos_step_one(void);
 static void ui_flow_show_bicos_step_two(void);
+static void ui_flow_show_bicos_config_manual(void);
 static void ui_flow_destroy_wifi_panel(void);
 static void ui_flow_destroy_bluetooth_panel(void);
 static void ui_flow_destroy_general_panel(void);
@@ -71,6 +98,225 @@ static void ui_flow_destroy_about_panel(void);
 static void ui_flow_destroy_maintenance_panel(void);
 static void ui_flow_oscilloscope_menu_cb(void);
 static void ui_flow_show_general_panel(void);
+
+/** @brief Fecha o diálogo de ajuste de um parâmetro do modo manual. */
+static void ui_flow_close_manual_popup(void)
+{
+    if (s_ui_flow.manual_popup != NULL) {
+        lv_obj_delete(s_ui_flow.manual_popup);
+        s_ui_flow.manual_popup = NULL;
+        s_ui_flow.manual_popup_value = NULL;
+    }
+}
+
+/** @brief Retorna o valor atual de um parâmetro do modo manual. */
+static int32_t ui_flow_manual_get_value(ui_flow_manual_setting_t setting)
+{
+    switch (setting) {
+    case UI_FLOW_MANUAL_PRESSURE: return s_ui_flow.manual_pressure;
+    case UI_FLOW_MANUAL_PULSE: return s_ui_flow.manual_pulse;
+    case UI_FLOW_MANUAL_RPM: return s_ui_flow.manual_rpm;
+    case UI_FLOW_MANUAL_CYCLES: return s_ui_flow.manual_cycles;
+    case UI_FLOW_MANUAL_PAUSE: return s_ui_flow.manual_pause;
+    case UI_FLOW_MANUAL_TEMPERATURE: return s_ui_flow.manual_temperature;
+    default: return 0;
+    }
+}
+
+/** @brief Salva o valor atual de um parâmetro do modo manual. */
+static void ui_flow_manual_set_value(ui_flow_manual_setting_t setting, int32_t value)
+{
+    switch (setting) {
+    case UI_FLOW_MANUAL_PRESSURE: s_ui_flow.manual_pressure = value; break;
+    case UI_FLOW_MANUAL_PULSE: s_ui_flow.manual_pulse = value; break;
+    case UI_FLOW_MANUAL_RPM: s_ui_flow.manual_rpm = value; break;
+    case UI_FLOW_MANUAL_CYCLES: s_ui_flow.manual_cycles = value; break;
+    case UI_FLOW_MANUAL_PAUSE: s_ui_flow.manual_pause = value; break;
+    case UI_FLOW_MANUAL_TEMPERATURE: s_ui_flow.manual_temperature = value; break;
+    default: break;
+    }
+}
+
+/** @brief Retorna o menor valor permitido para um parâmetro manual. */
+static int32_t ui_flow_manual_get_min(ui_flow_manual_setting_t setting)
+{
+    switch (setting) {
+    case UI_FLOW_MANUAL_PRESSURE:
+    case UI_FLOW_MANUAL_PULSE:
+    case UI_FLOW_MANUAL_CYCLES: return 1;
+    case UI_FLOW_MANUAL_RPM: return 500;
+    case UI_FLOW_MANUAL_PAUSE: return 100;
+    case UI_FLOW_MANUAL_TEMPERATURE: return 25;
+    default: return 0;
+    }
+}
+
+/** @brief Retorna o maior valor permitido para um parâmetro manual. */
+static int32_t ui_flow_manual_get_max(ui_flow_manual_setting_t setting)
+{
+    switch (setting) {
+    case UI_FLOW_MANUAL_PRESSURE: return 150;
+    case UI_FLOW_MANUAL_PULSE: return 35;
+    case UI_FLOW_MANUAL_RPM:
+    case UI_FLOW_MANUAL_CYCLES: return 10000;
+    case UI_FLOW_MANUAL_PAUSE: return 10000;
+    case UI_FLOW_MANUAL_TEMPERATURE: return 80;
+    default: return 0;
+    }
+}
+
+/** @brief Retorna o título usado pelo diálogo de um parâmetro manual. */
+static const char *ui_flow_manual_get_title(ui_flow_manual_setting_t setting)
+{
+    static const char *const titles[] = {"Pressao", "Pulso", "RPM", "Ciclos", "Tempo de Pausa", "Temperatura"};
+    return titles[setting];
+}
+
+/** @brief Formata um valor manual com sua unidade para apresentação na interface. */
+static void ui_flow_manual_format_value(ui_flow_manual_setting_t setting, int32_t value, char *buffer, size_t size)
+{
+    static const char *const units[] = {"bar", "ms", "rpm", "ciclos", "ms", "C"};
+    lv_snprintf(buffer, size, "%ld %s", (long)value, units[setting]);
+}
+
+/** @brief Formata o valor para os botões manuais. */
+static void ui_flow_manual_format_button_value(ui_flow_manual_setting_t setting, int32_t value, char *buffer, size_t size)
+{
+    static const char *const units[] = {"bar", "ms", "rpm", "ciclos", "ms", "C"};
+    lv_snprintf(buffer, size, "%ld %s", (long)value, units[setting]);
+}
+
+/** @brief Atualiza os seis labels de valor da tela de configuração manual. */
+static void ui_flow_manual_update_labels(void)
+{
+    char value[24] = {0};
+    lv_obj_t *labels[] = {
+        guider_ui.screen_bicos_step_config_manual.button_pressao_label_bt_value_pressao,
+        guider_ui.screen_bicos_step_config_manual.button_pulso_ms_label_bt_value_pulso,
+        guider_ui.screen_bicos_step_config_manual.button_rpm_label_bt_value_rpm,
+        guider_ui.screen_bicos_step_config_manual.button_ciclos_label_bt_value_ciclos,
+        guider_ui.screen_bicos_step_config_manual.button_tempo_de_pausa_label_bt_value_tempo_de_pausa,
+        guider_ui.screen_bicos_step_config_manual.button_temperatura_label_bt_value_temperatura
+    };
+    for (uint32_t setting = UI_FLOW_MANUAL_PRESSURE; setting <= UI_FLOW_MANUAL_TEMPERATURE; setting++) {
+        if (labels[setting] != NULL) {
+            ui_flow_manual_format_button_value((ui_flow_manual_setting_t)setting,
+                                               ui_flow_manual_get_value((ui_flow_manual_setting_t)setting), value, sizeof(value));
+            lv_label_set_text(labels[setting], value);
+        }
+    }
+}
+
+/** @brief Cria indicadores de navegação alinhados à direita dos botões manuais. */
+static void ui_flow_manual_create_navigation_indicators(void)
+{
+    lv_obj_t *buttons[] = {
+        guider_ui.screen_bicos_step_config_manual.button_pressao,
+        guider_ui.screen_bicos_step_config_manual.button_pulso_ms,
+        guider_ui.screen_bicos_step_config_manual.button_rpm,
+        guider_ui.screen_bicos_step_config_manual.button_ciclos,
+        guider_ui.screen_bicos_step_config_manual.button_tempo_de_pausa,
+        guider_ui.screen_bicos_step_config_manual.button_temperatura
+    };
+
+    if (guider_ui.screen_bicos_step_config_manual.button_ciclos_label_bt_value_ciclos != NULL) {
+        lv_obj_set_x(guider_ui.screen_bicos_step_config_manual.button_ciclos_label_bt_value_ciclos, 205);
+    }
+
+    for (uint32_t setting = UI_FLOW_MANUAL_PRESSURE; setting <= UI_FLOW_MANUAL_TEMPERATURE; setting++) {
+        if (buttons[setting] == NULL) {
+            continue;
+        }
+        lv_obj_t *indicator = lv_label_create(buttons[setting]);
+        lv_label_set_text(indicator, ">");
+        lv_obj_set_style_text_color(indicator, lv_color_hex(0xffffff), LV_PART_MAIN);
+        lv_obj_set_style_text_font(indicator, &lv_font_montserratMedium_18, LV_PART_MAIN);
+        lv_obj_align(indicator, LV_ALIGN_RIGHT_MID, 9, 0);
+    }
+}
+
+/** @brief Atualiza a prévia exibida ao mover o slider de configuração manual. */
+static void ui_flow_manual_slider_cb(lv_event_t *event)
+{
+    char value[24] = {0};
+    ui_flow_manual_format_value(s_ui_flow.manual_active_setting,
+                                lv_slider_get_value(lv_event_get_target_obj(event)), value, sizeof(value));
+    lv_label_set_text(s_ui_flow.manual_popup_value, value);
+}
+
+/** @brief Confirma o valor selecionado e atualiza a tela de configuração manual. */
+static void ui_flow_manual_apply_cb(lv_event_t *event)
+{
+    lv_obj_t *slider = lv_event_get_user_data(event);
+    ui_flow_manual_set_value(s_ui_flow.manual_active_setting, lv_slider_get_value(slider));
+    ui_flow_manual_update_labels();
+    ui_flow_close_manual_popup();
+}
+
+/** @brief Fecha o diálogo manual sem gravar o valor atualmente pré-visualizado. */
+static void ui_flow_manual_cancel_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_manual_popup();
+}
+
+/** @brief Abre o diálogo de ajuste do parâmetro manual selecionado. */
+static void ui_flow_manual_setting_button_cb(lv_event_t *event)
+{
+    const ui_flow_manual_setting_t setting = (ui_flow_manual_setting_t)(uintptr_t)lv_event_get_user_data(event);
+    char value[24] = {0};
+    ui_flow_close_manual_popup();
+    s_ui_flow.manual_active_setting = setting;
+    s_ui_flow.manual_popup = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.manual_popup, 360, 240);
+    lv_obj_center(s_ui_flow.manual_popup);
+    lv_obj_set_style_bg_color(s_ui_flow.manual_popup, lv_color_hex(0x101416), LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.manual_popup, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.manual_popup, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_ui_flow.manual_popup, 8, LV_PART_MAIN);
+    lv_obj_t *title = lv_label_create(s_ui_flow.manual_popup);
+    lv_label_set_text(title, ui_flow_manual_get_title(setting));
+    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(title, &lv_font_montserratMedium_20, LV_PART_MAIN);
+    lv_obj_set_pos(title, 0, 16);
+    lv_obj_t *slider = lv_slider_create(s_ui_flow.manual_popup);
+    lv_obj_set_size(slider, 300, 20);
+    lv_obj_set_pos(slider, 10, 78);
+    lv_slider_set_range(slider, ui_flow_manual_get_min(setting), ui_flow_manual_get_max(setting));
+    lv_slider_set_value(slider, ui_flow_manual_get_value(setting), LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0x1976d2), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0x2196f3), LV_PART_KNOB);
+    s_ui_flow.manual_popup_value = lv_label_create(s_ui_flow.manual_popup);
+    ui_flow_manual_format_value(setting, ui_flow_manual_get_value(setting), value, sizeof(value));
+    lv_label_set_text(s_ui_flow.manual_popup_value, value);
+    lv_obj_set_style_text_color(s_ui_flow.manual_popup_value, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align_to(s_ui_flow.manual_popup_value, slider, LV_ALIGN_OUT_BOTTOM_MID, 0, 14);
+    lv_obj_add_event_cb(slider, ui_flow_manual_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_t *apply = lv_button_create(s_ui_flow.manual_popup);
+    lv_obj_set_size(apply, 110, 38);
+    lv_obj_set_pos(apply, 210, 156);
+    lv_obj_set_style_bg_color(apply, lv_color_hex(0x09572e), LV_PART_MAIN);
+    lv_obj_set_style_border_color(apply, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(apply, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(apply, 8, LV_PART_MAIN);
+    lv_obj_add_event_cb(apply, ui_flow_manual_apply_cb, LV_EVENT_CLICKED, slider);
+    lv_obj_t *apply_label = lv_label_create(apply);
+    lv_label_set_text(apply_label, "Aplicar");
+    lv_obj_set_style_text_color(apply_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(apply_label);
+    lv_obj_t *cancel = lv_button_create(s_ui_flow.manual_popup);
+    lv_obj_set_size(cancel, 110, 38);
+    lv_obj_set_pos(cancel, 0, 156);
+    lv_obj_set_style_bg_color(cancel, lv_color_hex(0x8b1e1e), LV_PART_MAIN);
+    lv_obj_set_style_border_color(cancel, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(cancel, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(cancel, 8, LV_PART_MAIN);
+    lv_obj_add_event_cb(cancel, ui_flow_manual_cancel_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *cancel_label = lv_label_create(cancel);
+    lv_label_set_text(cancel_label, "Cancelar");
+    lv_obj_set_style_text_color(cancel_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(cancel_label);
+}
 
 /** @brief Fecha o diálogo de edição e atualiza os valores apresentados no painel. */
 static void ui_flow_general_close_popup(lv_event_t *event)
@@ -972,6 +1218,13 @@ static void ui_flow_bicos_step_two_button_cb(lv_event_t *event)
     ui_flow_show_bicos_step_two();
 }
 
+/** @brief Abre a configuração manual de parâmetros do ciclo. */
+static void ui_flow_bicos_manual_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_bicos_config_manual();
+}
+
 /** @brief Retorna do osciloscópio ao menu sem destruir sua tela persistente. */
 static void ui_flow_oscilloscope_menu_cb(void)
 {
@@ -988,6 +1241,7 @@ static void ui_flow_oscilloscope_menu_cb(void)
  */
 static void ui_flow_show_main_menu(void)
 {
+    ui_flow_close_manual_popup();
     ui_flow_destroy_general_panel();
     ui_flow_destroy_about_panel();
     ui_flow_destroy_maintenance_panel();
@@ -1030,6 +1284,7 @@ static void ui_flow_show_main_menu(void)
 /** @brief Cria, conecta e carrega a tela de escolha do tipo de bico. */
 static void ui_flow_show_bicos_step_one(void)
 {
+    ui_flow_close_manual_popup();
     if (s_ui_flow.menu_clock_timer != NULL) {
         lv_timer_delete(s_ui_flow.menu_clock_timer);
         s_ui_flow.menu_clock_timer = NULL;
@@ -1061,6 +1316,7 @@ static void ui_flow_show_bicos_step_one(void)
 /** @brief Cria, conecta e carrega a tela de escolha do modo de teste. */
 static void ui_flow_show_bicos_step_two(void)
 {
+    ui_flow_close_manual_popup();
     memset(&guider_ui.screen_bicos_step_two, 0, sizeof(guider_ui.screen_bicos_step_two));
     setup_screen_bicos_step_two(&guider_ui);
     if (guider_ui.screen_bicos_step_two.screen == NULL) {
@@ -1080,9 +1336,46 @@ static void ui_flow_show_bicos_step_two(void)
     }
     if (guider_ui.screen_bicos_step_two.button_modo_manual != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_bicos_step_two.button_modo_manual,
-                            ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
+                            ui_flow_bicos_manual_button_cb, LV_EVENT_CLICKED, NULL);
     }
     lv_screen_load_anim(guider_ui.screen_bicos_step_two.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+}
+
+/** @brief Cria, conecta e carrega a tela de configuração manual do ciclo. */
+static void ui_flow_show_bicos_config_manual(void)
+{
+    ui_flow_close_manual_popup();
+    memset(&guider_ui.screen_bicos_step_config_manual, 0, sizeof(guider_ui.screen_bicos_step_config_manual));
+    setup_screen_bicos_step_config_manual(&guider_ui);
+    if (guider_ui.screen_bicos_step_config_manual.screen == NULL) {
+        return;
+    }
+    ui_flow_manual_create_navigation_indicators();
+    ui_flow_manual_update_labels();
+    if (guider_ui.screen_bicos_step_config_manual.button_voltar != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_bicos_step_config_manual.button_voltar,
+                            ui_flow_bicos_step_two_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_bicos_step_config_manual.button_avancar != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_bicos_step_config_manual.button_avancar,
+                            ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    lv_obj_t *buttons[] = {
+        guider_ui.screen_bicos_step_config_manual.button_pressao,
+        guider_ui.screen_bicos_step_config_manual.button_pulso_ms,
+        guider_ui.screen_bicos_step_config_manual.button_rpm,
+        guider_ui.screen_bicos_step_config_manual.button_ciclos,
+        guider_ui.screen_bicos_step_config_manual.button_tempo_de_pausa,
+        guider_ui.screen_bicos_step_config_manual.button_temperatura
+    };
+    for (uint32_t setting = UI_FLOW_MANUAL_PRESSURE; setting <= UI_FLOW_MANUAL_TEMPERATURE; setting++) {
+        if (buttons[setting] != NULL) {
+            lv_obj_add_event_cb(buttons[setting], ui_flow_manual_setting_button_cb,
+                                LV_EVENT_CLICKED, (void *)(uintptr_t)setting);
+        }
+    }
+    lv_screen_load_anim(guider_ui.screen_bicos_step_config_manual.screen,
+                        LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
 
 /**

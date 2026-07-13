@@ -55,6 +55,7 @@ void gg_event_init_screen_menu_principal(gg_ui_t * ui);
 void gg_event_init_screen_configuracoes(gg_ui_t * ui);
 void gg_event_init_screen_bicos_step_one(gg_ui_t * ui);
 void gg_event_init_screen_bicos_step_two(gg_ui_t * ui);
+void gg_event_init_screen_bicos_step_config_manual(gg_ui_t * ui);
 
 #ifdef __cplusplus
 }
