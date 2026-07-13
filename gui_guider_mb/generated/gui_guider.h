@@ -165,6 +165,19 @@ typedef struct {
 } gg_screen_bicos_step_config_manual_t;
 
 typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * container_infos;
+    lv_obj_t * label_aviso;
+    lv_obj_t * button_top;
+    lv_obj_t * button_top_label_bt_top;
+    lv_obj_t * button_bottom;
+    lv_obj_t * button_iniciar;
+    lv_obj_t * button_iniciar_label_1;
+    lv_obj_t * button_voltar;
+    lv_obj_t * button_voltar_image_bt_voltar;
+} gg_screen_pronto_pra_iniciar_t;
+
+typedef struct {
     gg_layer_sys_t layer_sys;
     gg_layer_top_t layer_top;
     gg_layer_bottom_t layer_bottom;
@@ -174,6 +187,7 @@ typedef struct {
     gg_screen_bicos_step_one_t screen_bicos_step_one;
     gg_screen_bicos_step_two_t screen_bicos_step_two;
     gg_screen_bicos_step_config_manual_t screen_bicos_step_config_manual;
+    gg_screen_pronto_pra_iniciar_t screen_pronto_pra_iniciar;
 } gg_ui_t;
 
 typedef struct {
@@ -196,6 +210,7 @@ void setup_screen_configuracoes(gg_ui_t * ui);
 void setup_screen_bicos_step_one(gg_ui_t * ui);
 void setup_screen_bicos_step_two(gg_ui_t * ui);
 void setup_screen_bicos_step_config_manual(gg_ui_t * ui);
+void setup_screen_pronto_pra_iniciar(gg_ui_t * ui);
 
 #ifdef __cplusplus
 }

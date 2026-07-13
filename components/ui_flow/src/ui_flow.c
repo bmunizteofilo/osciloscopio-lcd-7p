@@ -24,6 +24,12 @@ typedef enum {
     UI_FLOW_MANUAL_TEMPERATURE
 } ui_flow_manual_setting_t;
 
+/** @brief Tipos de bico disponíveis para o ciclo. */
+typedef enum {
+    UI_FLOW_INJECTOR_12V,
+    UI_FLOW_INJECTOR_75V_GDI
+} ui_flow_injector_type_t;
+
 /** @brief Instância exigida pelo código exportado pelo NXP GUI Guider. */
 gg_ui_t guider_ui;
 
@@ -69,6 +75,7 @@ typedef struct {
     int32_t manual_cycles;
     int32_t manual_pause;
     int32_t manual_temperature;
+    ui_flow_injector_type_t injector_type;
 } ui_flow_context_t;
 
 /** @brief Estado persistente da splash e de sua transição. */
@@ -91,6 +98,7 @@ static void ui_flow_show_settings(void);
 static void ui_flow_show_bicos_step_one(void);
 static void ui_flow_show_bicos_step_two(void);
 static void ui_flow_show_bicos_config_manual(void);
+static void ui_flow_show_ready_to_start(void);
 static void ui_flow_destroy_wifi_panel(void);
 static void ui_flow_destroy_bluetooth_panel(void);
 static void ui_flow_destroy_general_panel(void);
@@ -233,6 +241,66 @@ static void ui_flow_manual_create_navigation_indicators(void)
         lv_obj_set_style_text_font(indicator, &lv_font_montserratMedium_18, LV_PART_MAIN);
         lv_obj_align(indicator, LV_ALIGN_RIGHT_MID, 9, 0);
     }
+}
+
+/** @brief Adiciona uma linha de resumo ao container da tela de confirmação. */
+static void ui_flow_ready_add_info_row(lv_obj_t *parent, const char *name, const char *value)
+{
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_set_size(row, LV_PCT(100), 34);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(row, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_color(row, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(row, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, LV_PART_MAIN);
+
+    lv_obj_t *name_label = lv_label_create(row);
+    lv_label_set_text(name_label, name);
+    lv_obj_set_style_text_color(name_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(name_label, &lv_font_montserratMedium_18, LV_PART_MAIN);
+    lv_obj_align(name_label, LV_ALIGN_LEFT_MID, 0, 0);
+
+    lv_obj_t *value_label = lv_label_create(row);
+    lv_label_set_text(value_label, value);
+    lv_obj_set_style_text_color(value_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(value_label, &lv_font_montserratMedium_18, LV_PART_MAIN);
+    lv_obj_align(value_label, LV_ALIGN_RIGHT_MID, 0, 0);
+}
+
+/** @brief Preenche o container com o resumo dos parâmetros que serão executados. */
+static void ui_flow_ready_populate_info(void)
+{
+    lv_obj_t *container = guider_ui.screen_pronto_pra_iniciar.container_infos;
+    if (container == NULL) {
+        return;
+    }
+    lv_obj_clean(container);
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_scroll_dir(container, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(container, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_pad_left(container, 14, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(container, 14, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(container, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(container, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(container, 0, LV_PART_MAIN);
+
+    char value[24] = {0};
+    ui_flow_ready_add_info_row(container, "Tipo de Bico",
+                               s_ui_flow.injector_type == UI_FLOW_INJECTOR_75V_GDI ? "75V GDI" : "12V comum");
+    ui_flow_manual_format_value(UI_FLOW_MANUAL_PRESSURE, s_ui_flow.manual_pressure, value, sizeof(value));
+    ui_flow_ready_add_info_row(container, "Pressao", value);
+    ui_flow_manual_format_value(UI_FLOW_MANUAL_PULSE, s_ui_flow.manual_pulse, value, sizeof(value));
+    ui_flow_ready_add_info_row(container, "Pulso", value);
+    ui_flow_manual_format_value(UI_FLOW_MANUAL_RPM, s_ui_flow.manual_rpm, value, sizeof(value));
+    ui_flow_ready_add_info_row(container, "RPM", value);
+    ui_flow_manual_format_value(UI_FLOW_MANUAL_CYCLES, s_ui_flow.manual_cycles, value, sizeof(value));
+    ui_flow_ready_add_info_row(container, "Ciclos", value);
+    ui_flow_manual_format_value(UI_FLOW_MANUAL_PAUSE, s_ui_flow.manual_pause, value, sizeof(value));
+    ui_flow_ready_add_info_row(container, "Tempo de Pausa", value);
+    ui_flow_manual_format_value(UI_FLOW_MANUAL_TEMPERATURE, s_ui_flow.manual_temperature, value, sizeof(value));
+    ui_flow_ready_add_info_row(container, "Temperatura", value);
 }
 
 /** @brief Atualiza a prévia exibida ao mover o slider de configuração manual. */
@@ -1218,11 +1286,25 @@ static void ui_flow_bicos_step_two_button_cb(lv_event_t *event)
     ui_flow_show_bicos_step_two();
 }
 
+/** @brief Salva o tipo de bico escolhido e avança para a seleção do modo de teste. */
+static void ui_flow_injector_type_button_cb(lv_event_t *event)
+{
+    s_ui_flow.injector_type = (ui_flow_injector_type_t)(uintptr_t)lv_event_get_user_data(event);
+    ui_flow_show_bicos_step_two();
+}
+
 /** @brief Abre a configuração manual de parâmetros do ciclo. */
 static void ui_flow_bicos_manual_button_cb(lv_event_t *event)
 {
     (void)event;
     ui_flow_show_bicos_config_manual();
+}
+
+/** @brief Abre a confirmação final antes de iniciar o ciclo. */
+static void ui_flow_ready_to_start_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_ready_to_start();
 }
 
 /** @brief Retorna do osciloscópio ao menu sem destruir sua tela persistente. */
@@ -1304,11 +1386,13 @@ static void ui_flow_show_bicos_step_one(void)
     }
     if (guider_ui.screen_bicos_step_one.button_bico_12v_comum != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_bicos_step_one.button_bico_12v_comum,
-                            ui_flow_bicos_step_two_button_cb, LV_EVENT_CLICKED, NULL);
+                            ui_flow_injector_type_button_cb, LV_EVENT_CLICKED,
+                            (void *)(uintptr_t)UI_FLOW_INJECTOR_12V);
     }
     if (guider_ui.screen_bicos_step_one.button_bico_gdi != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_bicos_step_one.button_bico_gdi,
-                            ui_flow_bicos_step_two_button_cb, LV_EVENT_CLICKED, NULL);
+                            ui_flow_injector_type_button_cb, LV_EVENT_CLICKED,
+                            (void *)(uintptr_t)UI_FLOW_INJECTOR_75V_GDI);
     }
     lv_screen_load_anim(guider_ui.screen_bicos_step_one.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
@@ -1358,7 +1442,7 @@ static void ui_flow_show_bicos_config_manual(void)
     }
     if (guider_ui.screen_bicos_step_config_manual.button_avancar != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_bicos_step_config_manual.button_avancar,
-                            ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
+                            ui_flow_ready_to_start_button_cb, LV_EVENT_CLICKED, NULL);
     }
     lv_obj_t *buttons[] = {
         guider_ui.screen_bicos_step_config_manual.button_pressao,
@@ -1375,6 +1459,28 @@ static void ui_flow_show_bicos_config_manual(void)
         }
     }
     lv_screen_load_anim(guider_ui.screen_bicos_step_config_manual.screen,
+                        LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+}
+
+/** @brief Cria, preenche e carrega a tela de confirmação do ciclo. */
+static void ui_flow_show_ready_to_start(void)
+{
+    ui_flow_close_manual_popup();
+    memset(&guider_ui.screen_pronto_pra_iniciar, 0, sizeof(guider_ui.screen_pronto_pra_iniciar));
+    setup_screen_pronto_pra_iniciar(&guider_ui);
+    if (guider_ui.screen_pronto_pra_iniciar.screen == NULL) {
+        return;
+    }
+    ui_flow_ready_populate_info();
+    if (guider_ui.screen_pronto_pra_iniciar.button_voltar != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_pronto_pra_iniciar.button_voltar,
+                            ui_flow_bicos_manual_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_pronto_pra_iniciar.button_iniciar != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_pronto_pra_iniciar.button_iniciar,
+                            ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    lv_screen_load_anim(guider_ui.screen_pronto_pra_iniciar.screen,
                         LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
 

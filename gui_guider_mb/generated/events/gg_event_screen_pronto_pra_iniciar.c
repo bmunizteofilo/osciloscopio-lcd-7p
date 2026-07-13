@@ -21,44 +21,12 @@
  * ------------------------------------------------------------------------------
  */
 
-#ifndef GG_EVENT_H
-#define GG_EVENT_H
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "gg_event.h"
+#include "custom.h"
 
-#include "gui_guider.h"
-#include "gg_utils.h"
+// No event handlers
 
-/* Animation control helper functions */
-static inline void gg_pause_anim(lv_obj_t * obj, lv_anim_exec_xcb_t exec_cb)
+void gg_event_init_screen_pronto_pra_iniciar(gg_ui_t * ui)
 {
-    lv_anim_t * anim = lv_anim_get(obj, exec_cb);
-    if(anim != NULL) {
-        lv_anim_pause(anim);
-    }
+    // No event callbacks
 }
-
-static inline void gg_resume_anim(lv_obj_t * obj, lv_anim_exec_xcb_t exec_cb)
-{
-    lv_anim_t * anim = lv_anim_get(obj, exec_cb);
-    if(anim != NULL) {
-        lv_anim_resume(anim);
-    }
-}
-
-void gg_event_init_layer_sys(gg_ui_t * ui);
-void gg_event_init_layer_top(gg_ui_t * ui);
-void gg_event_init_layer_bottom(gg_ui_t * ui);
-void gg_event_init_screen_splash(gg_ui_t * ui);
-void gg_event_init_screen_menu_principal(gg_ui_t * ui);
-void gg_event_init_screen_configuracoes(gg_ui_t * ui);
-void gg_event_init_screen_bicos_step_one(gg_ui_t * ui);
-void gg_event_init_screen_bicos_step_two(gg_ui_t * ui);
-void gg_event_init_screen_bicos_step_config_manual(gg_ui_t * ui);
-void gg_event_init_screen_pronto_pra_iniciar(gg_ui_t * ui);
-
-#ifdef __cplusplus
-}
-#endif
-#endif
