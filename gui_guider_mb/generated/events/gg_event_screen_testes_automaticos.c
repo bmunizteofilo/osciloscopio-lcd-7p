@@ -21,21 +21,12 @@
  * ------------------------------------------------------------------------------
  */
 
-#ifndef GG_FONT_H
-#define GG_FONT_H
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "gg_event.h"
+#include "custom.h"
 
-#include "lvgl.h"
+// No event handlers
 
-LV_FONT_DECLARE(lv_font_montserratMedium_25);
-LV_FONT_DECLARE(lv_font_montserratMedium_30);
-LV_FONT_DECLARE(lv_font_montserratMedium_16);
-LV_FONT_DECLARE(lv_font_montserratMedium_20);
-LV_FONT_DECLARE(lv_font_montserratMedium_18);
-
-#ifdef __cplusplus
+void gg_event_init_screen_testes_automaticos(gg_ui_t * ui)
+{
+    // No event callbacks
 }
-#endif
-#endif

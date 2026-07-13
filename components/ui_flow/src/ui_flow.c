@@ -99,6 +99,8 @@ static void ui_flow_show_bicos_step_one(void);
 static void ui_flow_show_bicos_step_two(void);
 static void ui_flow_show_bicos_config_manual(void);
 static void ui_flow_show_ready_to_start(void);
+static void ui_flow_show_automatic_tests(void);
+static void ui_flow_show_automatic_tests_second_page(void);
 static void ui_flow_destroy_wifi_panel(void);
 static void ui_flow_destroy_bluetooth_panel(void);
 static void ui_flow_destroy_general_panel(void);
@@ -468,10 +470,20 @@ static void ui_flow_general_style_control(lv_obj_t *object)
     lv_obj_set_style_text_font(object, &lv_font_montserratMedium_20, LV_PART_MAIN);
 }
 
+/** @brief Informa se o Wi-Fi está ligado e conectado a uma rede. */
+static bool ui_flow_wifi_is_connected(void)
+{
+    wifi_manager_status_t status = {0};
+    return wifi_manager_get_status(&status) == ESP_OK && status.enabled && status.connected;
+}
+
 /** @brief Exibe o detalhe da opção geral selecionada. */
 static void ui_flow_general_option_cb(lv_event_t *event)
 {
     const uint8_t option = (uint8_t)(uintptr_t)lv_event_get_user_data(event);
+    if (option == 1U && ui_flow_wifi_is_connected()) {
+        return;
+    }
     ui_flow_general_close_popup(NULL);
     s_ui_flow.general_popup = lv_obj_create(lv_layer_top());
     lv_obj_set_size(s_ui_flow.general_popup, option == 1 ? 390 : 360, option == 1 ? 450 : 240); lv_obj_center(s_ui_flow.general_popup);
@@ -526,6 +538,9 @@ static void ui_flow_general_row(lv_obj_t *parent, const char *name, const char *
     lv_obj_set_pos(row, 15, y + 5);
     ui_flow_general_style_control(row);
     lv_obj_add_event_cb(row, ui_flow_general_option_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)option);
+    if (option == 1U && ui_flow_wifi_is_connected()) {
+        lv_obj_add_state(row, LV_STATE_DISABLED);
+    }
     lv_obj_t *name_label = lv_label_create(row);
     lv_label_set_text(name_label, name);
     lv_obj_set_style_text_color(name_label, lv_color_hex(0xffffff), LV_PART_MAIN);
@@ -703,20 +718,43 @@ static void ui_flow_maintenance_button_cb(lv_event_t *event)
     ui_flow_show_maintenance_panel();
 }
 
-/** @brief Atualiza os labels de data e hora enquanto o menu principal está ativo. */
+/** @brief Atualiza os indicadores de conectividade apresentados no menu principal. */
+static void ui_flow_update_menu_connectivity_labels(void)
+{
+    if (guider_ui.screen_menu_principal.label_status_wifi != NULL) {
+        wifi_manager_status_t wifi_status = {0};
+        const bool wifi_online = wifi_manager_get_status(&wifi_status) == ESP_OK && wifi_status.connected;
+        lv_label_set_text(guider_ui.screen_menu_principal.label_status_wifi,
+                          wifi_online ? "Wifi - Online" : "Wifi - Offline");
+        lv_obj_set_style_text_color(guider_ui.screen_menu_principal.label_status_wifi,
+                                    wifi_online ? lv_color_hex(0x00c853) : lv_color_hex(0xffffff), LV_PART_MAIN);
+    }
+
+    if (guider_ui.screen_menu_principal.label_status_bluetooth != NULL) {
+        bluetooth_manager_status_t bluetooth_status = {0};
+        const bool bluetooth_online = bluetooth_manager_get_status(&bluetooth_status) == ESP_OK &&
+                                      bluetooth_status.enabled;
+        lv_label_set_text(guider_ui.screen_menu_principal.label_status_bluetooth,
+                          bluetooth_online ? "Bluetooth - Online" : "Bluetooth - Offline");
+        lv_obj_set_style_text_color(guider_ui.screen_menu_principal.label_status_bluetooth,
+                                    bluetooth_online ? lv_color_hex(0x2196f3) : lv_color_hex(0xffffff), LV_PART_MAIN);
+    }
+}
+
+/** @brief Atualiza os labels de data, hora e conectividade enquanto o menu está ativo. */
 static void ui_flow_menu_clock_update_cb(lv_timer_t *timer)
 {
     (void)timer;
-    if (!date_time_is_synchronized() || guider_ui.screen_menu_principal.label_menu_principal_hora == NULL ||
-        guider_ui.screen_menu_principal.label_menu_principal_data == NULL) {
-        return;
+    if (date_time_is_synchronized() && guider_ui.screen_menu_principal.label_menu_principal_hora != NULL &&
+        guider_ui.screen_menu_principal.label_menu_principal_data != NULL) {
+        char time_text[6] = {0};
+        char date_text[11] = {0};
+        date_time_format_time(time_text, sizeof(time_text));
+        date_time_format_date(date_text, sizeof(date_text));
+        lv_label_set_text(guider_ui.screen_menu_principal.label_menu_principal_hora, time_text);
+        lv_label_set_text(guider_ui.screen_menu_principal.label_menu_principal_data, date_text);
     }
-    char time_text[6] = {0};
-    char date_text[11] = {0};
-    date_time_format_time(time_text, sizeof(time_text));
-    date_time_format_date(date_text, sizeof(date_text));
-    lv_label_set_text(guider_ui.screen_menu_principal.label_menu_principal_hora, time_text);
-    lv_label_set_text(guider_ui.screen_menu_principal.label_menu_principal_data, date_text);
+    ui_flow_update_menu_connectivity_labels();
 }
 
 /** @brief Fecha o teclado local de credenciais Wi-Fi. */
@@ -1307,6 +1345,20 @@ static void ui_flow_ready_to_start_button_cb(lv_event_t *event)
     ui_flow_show_ready_to_start();
 }
 
+/** @brief Abre a seleção de testes automáticos. */
+static void ui_flow_automatic_tests_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_automatic_tests();
+}
+
+/** @brief Abre a segunda página de testes automáticos. */
+static void ui_flow_automatic_tests_more_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_automatic_tests_second_page();
+}
+
 /** @brief Retorna do osciloscópio ao menu sem destruir sua tela persistente. */
 static void ui_flow_oscilloscope_menu_cb(void)
 {
@@ -1416,7 +1468,7 @@ static void ui_flow_show_bicos_step_two(void)
     }
     if (guider_ui.screen_bicos_step_two.button_modo_automatico != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_bicos_step_two.button_modo_automatico,
-                            ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
+                            ui_flow_automatic_tests_button_cb, LV_EVENT_CLICKED, NULL);
     }
     if (guider_ui.screen_bicos_step_two.button_modo_manual != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_bicos_step_two.button_modo_manual,
@@ -1481,6 +1533,73 @@ static void ui_flow_show_ready_to_start(void)
                             ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
     }
     lv_screen_load_anim(guider_ui.screen_pronto_pra_iniciar.screen,
+                        LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+}
+
+/** @brief Cria, conecta e carrega a tela de seleção de testes automáticos. */
+static void ui_flow_show_automatic_tests(void)
+{
+    memset(&guider_ui.screen_testes_automaticos, 0, sizeof(guider_ui.screen_testes_automaticos));
+    setup_screen_testes_automaticos(&guider_ui);
+    if (guider_ui.screen_testes_automaticos.screen == NULL) {
+        return;
+    }
+    if (guider_ui.screen_testes_automaticos.button_voltar != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_testes_automaticos.button_voltar,
+                            ui_flow_bicos_step_two_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_testes_automaticos.button_home != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_testes_automaticos.button_home,
+                            ui_flow_main_menu_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    lv_obj_t *test_buttons[] = {
+        guider_ui.screen_testes_automaticos.button_teste_leque,
+        guider_ui.screen_testes_automaticos.button_teste_equalizacao_vazao,
+        guider_ui.screen_testes_automaticos.button_equa_vas_temp_maior,
+        guider_ui.screen_testes_automaticos.button_estanqueidade,
+        guider_ui.screen_testes_automaticos.button_alvo_do_teste_em_rotacoes,
+        guider_ui.screen_testes_automaticos.button_leque_vazao_equa,
+        guider_ui.screen_testes_automaticos.button_auto
+    };
+    for (uint32_t index = 0; index < sizeof(test_buttons) / sizeof(test_buttons[0]); index++) {
+        if (test_buttons[index] != NULL) {
+            lv_obj_add_event_cb(test_buttons[index], ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
+        }
+    }
+    if (guider_ui.screen_testes_automaticos.button_mais != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_testes_automaticos.button_mais,
+                            ui_flow_automatic_tests_more_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    lv_screen_load_anim(guider_ui.screen_testes_automaticos.screen,
+                        LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+}
+
+/** @brief Cria, conecta e carrega a segunda página de testes automáticos. */
+static void ui_flow_show_automatic_tests_second_page(void)
+{
+    memset(&guider_ui.screen_testes_automaticos_2, 0, sizeof(guider_ui.screen_testes_automaticos_2));
+    setup_screen_testes_automaticos_2(&guider_ui);
+    if (guider_ui.screen_testes_automaticos_2.screen == NULL) {
+        return;
+    }
+    if (guider_ui.screen_testes_automaticos_2.button_voltar != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_testes_automaticos_2.button_voltar,
+                            ui_flow_automatic_tests_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_testes_automaticos_2.button_home != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_testes_automaticos_2.button_home,
+                            ui_flow_main_menu_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    lv_obj_t *test_buttons[] = {
+        guider_ui.screen_testes_automaticos_2.button_leque_vazao_equa,
+        guider_ui.screen_testes_automaticos_2.button_teste_circulacao
+    };
+    for (uint32_t index = 0; index < sizeof(test_buttons) / sizeof(test_buttons[0]); index++) {
+        if (test_buttons[index] != NULL) {
+            lv_obj_add_event_cb(test_buttons[index], ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
+        }
+    }
+    lv_screen_load_anim(guider_ui.screen_testes_automaticos_2.screen,
                         LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
 

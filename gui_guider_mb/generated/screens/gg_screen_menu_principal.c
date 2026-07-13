@@ -285,6 +285,36 @@ void setup_screen_menu_principal(gg_ui_t * ui)
     lv_obj_set_style_text_font(ui->screen_menu_principal.label_menu_principal_hora, &lv_font_montserratMedium_30,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
 
+    // Create label: ui->screen_menu_principal.label_status_wifi
+    ui->screen_menu_principal.label_status_wifi = lv_label_create(ui->screen_menu_principal.screen);
+    lv_obj_set_width(ui->screen_menu_principal.label_status_wifi, LV_SIZE_CONTENT);
+    lv_obj_set_height(ui->screen_menu_principal.label_status_wifi, LV_SIZE_CONTENT);
+    lv_obj_set_align(ui->screen_menu_principal.label_status_wifi, LV_ALIGN_TOP_LEFT);
+    lv_obj_set_x(ui->screen_menu_principal.label_status_wifi, 252);
+    lv_obj_set_y(ui->screen_menu_principal.label_status_wifi, 31);
+    lv_label_set_text(ui->screen_menu_principal.label_status_wifi, "Wifi - Offline");
+
+    // Style: ui->screen_menu_principal.label_status_wifi [LV_PART_MAIN|LV_STATE_DEFAULT]
+    lv_obj_set_style_text_font(ui->screen_menu_principal.label_status_wifi, &lv_font_montserratMedium_16,
+                               LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(ui->screen_menu_principal.label_status_wifi, lv_color_hex(0xffffff),
+                                LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    // Create label: ui->screen_menu_principal.label_status_bluetooth
+    ui->screen_menu_principal.label_status_bluetooth = lv_label_create(ui->screen_menu_principal.screen);
+    lv_obj_set_width(ui->screen_menu_principal.label_status_bluetooth, LV_SIZE_CONTENT);
+    lv_obj_set_height(ui->screen_menu_principal.label_status_bluetooth, LV_SIZE_CONTENT);
+    lv_obj_set_align(ui->screen_menu_principal.label_status_bluetooth, LV_ALIGN_TOP_LEFT);
+    lv_obj_set_x(ui->screen_menu_principal.label_status_bluetooth, 427);
+    lv_obj_set_y(ui->screen_menu_principal.label_status_bluetooth, 31);
+    lv_label_set_text(ui->screen_menu_principal.label_status_bluetooth, "Bluetooth - Offline");
+
+    // Style: ui->screen_menu_principal.label_status_bluetooth [LV_PART_MAIN|LV_STATE_DEFAULT]
+    lv_obj_set_style_text_color(ui->screen_menu_principal.label_status_bluetooth, lv_color_hex(0xffffff),
+                                LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_menu_principal.label_status_bluetooth, &lv_font_montserratMedium_16,
+                               LV_PART_MAIN | LV_STATE_DEFAULT);
+
     // screen_menu_principal custom code
 
     // Update screen_menu_principal layout.

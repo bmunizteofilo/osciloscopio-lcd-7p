@@ -57,6 +57,8 @@ void gg_event_init_screen_bicos_step_one(gg_ui_t * ui);
 void gg_event_init_screen_bicos_step_two(gg_ui_t * ui);
 void gg_event_init_screen_bicos_step_config_manual(gg_ui_t * ui);
 void gg_event_init_screen_pronto_pra_iniciar(gg_ui_t * ui);
+void gg_event_init_screen_testes_automaticos(gg_ui_t * ui);
+void gg_event_init_screen_testes_automaticos_2(gg_ui_t * ui);
 
 #ifdef __cplusplus
 }

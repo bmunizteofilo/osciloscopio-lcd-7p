@@ -54,6 +54,8 @@ typedef struct {
 
 typedef struct {
     lv_obj_t * screen;
+    lv_obj_t * label_status_bluetooth;
+    lv_obj_t * label_status_wifi;
     lv_obj_t * label_menu_principal_hora;
     lv_obj_t * label_menu_principal_data;
     lv_obj_t * image_mecanica;
@@ -179,6 +181,57 @@ typedef struct {
 } gg_screen_pronto_pra_iniciar_t;
 
 typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * button_mais;
+    lv_obj_t * button_mais_image_bt_mais;
+    lv_obj_t * button_auto;
+    lv_obj_t * button_auto_image_teste_auto;
+    lv_obj_t * button_auto_label_bt_teste_auto;
+    lv_obj_t * button_leque_vazao_equa;
+    lv_obj_t * button_leque_vazao_equa_image_teste_leque_vazao;
+    lv_obj_t * button_leque_vazao_equa_label_bt_teste_leque_vazao;
+    lv_obj_t * button_alvo_do_teste_em_rotacoes;
+    lv_obj_t * button_alvo_do_teste_em_rotacoes_image_teste_alvo;
+    lv_obj_t * button_alvo_do_teste_em_rotacoes_label_bt_teste_alvo_do_leque;
+    lv_obj_t * button_estanqueidade;
+    lv_obj_t * button_estanqueidade_image_teste_estanqueidade;
+    lv_obj_t * button_estanqueidade_label_bt_teste_estanqueidade;
+    lv_obj_t * button_equa_vas_temp_maior;
+    lv_obj_t * button_equa_vas_temp_maior_image_teste_equa_temp_maior;
+    lv_obj_t * button_equa_vas_temp_maior_label_bt_equa_vas_tempo;
+    lv_obj_t * button_teste_equalizacao_vazao;
+    lv_obj_t * button_teste_equalizacao_vazao_image_bt_equalizacao;
+    lv_obj_t * button_teste_equalizacao_vazao_label_bt_teste_equa_vazao;
+    lv_obj_t * button_teste_leque;
+    lv_obj_t * button_teste_leque_image_bt_leque;
+    lv_obj_t * button_teste_leque_label_bt_teste_leque;
+    lv_obj_t * button_top;
+    lv_obj_t * button_top_label_bt_top;
+    lv_obj_t * button_home;
+    lv_obj_t * button_home_image_bt_home;
+    lv_obj_t * button_bottom;
+    lv_obj_t * button_voltar;
+    lv_obj_t * button_voltar_image_bt_voltar;
+} gg_screen_testes_automaticos_t;
+
+typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * button_teste_circulacao;
+    lv_obj_t * button_teste_circulacao_image_bt_teste_circulacao;
+    lv_obj_t * button_teste_circulacao_label_teste_circulacao;
+    lv_obj_t * button_leque_vazao_equa;
+    lv_obj_t * button_leque_vazao_equa_image_bt_leque_equa_vazao;
+    lv_obj_t * button_leque_vazao_equa_label_leque_equa_vazao;
+    lv_obj_t * button_top;
+    lv_obj_t * button_top_label_bt_top;
+    lv_obj_t * button_home;
+    lv_obj_t * button_home_image_bt_home;
+    lv_obj_t * button_bottom;
+    lv_obj_t * button_voltar;
+    lv_obj_t * button_voltar_image_bt_voltar;
+} gg_screen_testes_automaticos_2_t;
+
+typedef struct {
     gg_layer_sys_t layer_sys;
     gg_layer_top_t layer_top;
     gg_layer_bottom_t layer_bottom;
@@ -189,6 +242,8 @@ typedef struct {
     gg_screen_bicos_step_two_t screen_bicos_step_two;
     gg_screen_bicos_step_config_manual_t screen_bicos_step_config_manual;
     gg_screen_pronto_pra_iniciar_t screen_pronto_pra_iniciar;
+    gg_screen_testes_automaticos_t screen_testes_automaticos;
+    gg_screen_testes_automaticos_2_t screen_testes_automaticos_2;
 } gg_ui_t;
 
 typedef struct {
@@ -212,6 +267,8 @@ void setup_screen_bicos_step_one(gg_ui_t * ui);
 void setup_screen_bicos_step_two(gg_ui_t * ui);
 void setup_screen_bicos_step_config_manual(gg_ui_t * ui);
 void setup_screen_pronto_pra_iniciar(gg_ui_t * ui);
+void setup_screen_testes_automaticos(gg_ui_t * ui);
+void setup_screen_testes_automaticos_2(gg_ui_t * ui);
 
 #ifdef __cplusplus
 }

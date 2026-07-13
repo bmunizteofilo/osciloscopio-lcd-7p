@@ -6,7 +6,7 @@
   "toolVendor": "NXP Semiconductors",
   "createDate": "2026-07-11",
   "createVersion": "2.0.0",
-  "lastModified": "2026-07-13T21:42:32.706Z",
+  "lastModified": "2026-07-13T23:37:12.636Z",
   "description": "",
   "metadata": {
     "board": {
@@ -246,6 +246,53 @@
           }
         },
         "children": [
+          {
+            "id": "label_MRJTG2Q75BBQ",
+            "type": "label",
+            "name": "label_status_bluetooth",
+            "width": 0,
+            "width_unit": "content",
+            "height": 0,
+            "height_unit": "content",
+            "x": 427,
+            "x_unit": "px",
+            "y": 31,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "text_color": "#ffffff",
+                "text_size": 16
+              }
+            },
+            "text": "Bluetooth - Offline"
+          },
+          {
+            "id": "label_MRJTEVDVG3C1",
+            "type": "label",
+            "name": "label_status_wifi",
+            "width": 0,
+            "width_unit": "content",
+            "height": 0,
+            "height_unit": "content",
+            "x": 252,
+            "x_unit": "px",
+            "y": 31,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "text_family": "montserratMedium.ttf",
+                "text_size": 16,
+                "text_color": "#ffffff"
+              }
+            },
+            "text": "Wifi - Offline"
+          },
           {
             "id": "label_MRGYAD5J1K6R",
             "type": "label",
@@ -2747,6 +2794,1080 @@
             "children": [
               {
                 "id": "image_MRJJ18HQUWHR",
+                "type": "image",
+                "name": "image_bt_voltar",
+                "width": 50,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 2,
+                "x_unit": "px",
+                "y": -9,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/seta_esquerda.png"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "screen_4p86e84",
+        "name": "screen_testes_automaticos",
+        "type": "screen",
+        "style": {
+          "LV_PART_MAIN|LV_STATE_DEFAULT": {
+            "part": "LV_PART_MAIN",
+            "state": "LV_STATE_DEFAULT",
+            "bg_color": "#000000"
+          }
+        },
+        "children": [
+          {
+            "id": "button_MRJRTA2YLGUZ",
+            "type": "button",
+            "name": "button_mais",
+            "width": 187,
+            "width_unit": "px",
+            "height": 157,
+            "height_unit": "px",
+            "x": 597,
+            "x_unit": "px",
+            "y": 247,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_opa": 255,
+                "border_width": 3,
+                "border_color": "#2F3539"
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJSH97U2XT5",
+                "type": "image",
+                "name": "image_bt_mais",
+                "width": 60,
+                "width_unit": "px",
+                "height": 60,
+                "height_unit": "px",
+                "x": 44,
+                "x_unit": "px",
+                "y": 34,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#f4f4f4",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/mais.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJRSC20ARHR",
+            "type": "button",
+            "name": "button_auto",
+            "width": 187,
+            "width_unit": "px",
+            "height": 157,
+            "height_unit": "px",
+            "x": 597,
+            "x_unit": "px",
+            "y": 80,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJSV45MO6F2",
+                "type": "image",
+                "name": "image_teste_auto",
+                "width": 40,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 50,
+                "x_unit": "px",
+                "y": 10,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/definicoes.png"
+              },
+              {
+                "id": "label_MRJSFRB8EUDM",
+                "type": "label",
+                "name": "label_bt_teste_auto",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 44,
+                "x_unit": "px",
+                "y": 64,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "AUTO"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJRS2E6EIY4",
+            "type": "button",
+            "name": "button_leque_vazao_equa",
+            "width": 187,
+            "width_unit": "px",
+            "height": 157,
+            "height_unit": "px",
+            "x": 400,
+            "x_unit": "px",
+            "y": 247,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJSUD2ZA4K0",
+                "type": "image",
+                "name": "image_teste_leque_vazao",
+                "width": 40,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 50,
+                "x_unit": "px",
+                "y": 6,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#f8f8f8",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/leque.png"
+              },
+              {
+                "id": "label_MRJSETQXHFMS",
+                "type": "label",
+                "name": "label_bt_teste_leque_vazao",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": -7,
+                "x_unit": "px",
+                "y": 64,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "LEQUE, VAZÃO E\nEQUALIZAÇÃO"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJRRLQWWNU4",
+            "type": "button",
+            "name": "button_alvo_do_teste_em_rotacoes",
+            "width": 187,
+            "width_unit": "px",
+            "height": 157,
+            "height_unit": "px",
+            "x": 400,
+            "x_unit": "px",
+            "y": 80,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJSTKKYKF02",
+                "type": "image",
+                "name": "image_teste_alvo",
+                "width": 40,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 50,
+                "x_unit": "px",
+                "y": 10,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/alvo.png"
+              },
+              {
+                "id": "label_MRJSDJA9425U",
+                "type": "label",
+                "name": "label_bt_teste_alvo_do_leque",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": -7,
+                "x_unit": "px",
+                "y": 64,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "ALVO DO LEQUE\nEM ROTAÇÕES\nDIFERENTES"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJRR8NBI09U",
+            "type": "button",
+            "name": "button_estanqueidade",
+            "width": 187,
+            "width_unit": "px",
+            "height": 157,
+            "height_unit": "px",
+            "x": 207,
+            "x_unit": "px",
+            "y": 247,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJSSG8JI4RC",
+                "type": "image",
+                "name": "image_teste_estanqueidade",
+                "width": 40,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 48,
+                "x_unit": "px",
+                "y": 6,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/agua.png"
+              },
+              {
+                "id": "label_MRJSBRDXG7MW",
+                "type": "label",
+                "name": "label_bt_teste_estanqueidade",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": -14,
+                "x_unit": "px",
+                "y": 64,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "ESTANQUEIDADE"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJRPBCPYZLY",
+            "type": "button",
+            "name": "button_equa_vas_temp_maior",
+            "width": 187,
+            "width_unit": "px",
+            "height": 157,
+            "height_unit": "px",
+            "x": 207,
+            "x_unit": "px",
+            "y": 80,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJSQOZ2AIJA",
+                "type": "image",
+                "name": "image_teste_equa_temp_maior",
+                "width": 40,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 48,
+                "x_unit": "px",
+                "y": 10,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#f7f7f7",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/equalizacao.png"
+              },
+              {
+                "id": "label_MRJSA3XXC7VE",
+                "type": "label",
+                "name": "label_bt_equa_vas_tempo",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": -9,
+                "x_unit": "px",
+                "y": 64,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "EQUALIZAÇÃO E \nVAZÃO COM \nTEMPO MAIOR"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJRDUHDBLA9",
+            "type": "button",
+            "name": "button_teste_equalizacao_vazao",
+            "width": 187,
+            "width_unit": "px",
+            "height": 157,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 247,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJSOVGZUBHB",
+                "type": "image",
+                "name": "image_bt_equalizacao",
+                "width": 40,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 47,
+                "x_unit": "px",
+                "y": 6,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#f4f4f4",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/equalizacao.png"
+              },
+              {
+                "id": "label_MRJS8AI9XLNP",
+                "type": "label",
+                "name": "label_bt_teste_equa_vazao",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": -9,
+                "x_unit": "px",
+                "y": 64,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "EQUALIZAÇÃO E \n        VAZÃO"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJRCYQBPUYA",
+            "type": "button",
+            "name": "button_teste_leque",
+            "width": 187,
+            "width_unit": "px",
+            "height": 157,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 80,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJSN7346Q4D",
+                "type": "image",
+                "name": "image_bt_leque",
+                "width": 40,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 47,
+                "x_unit": "px",
+                "y": 10,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#f8f8f8",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/leque.png"
+              },
+              {
+                "id": "label_MRJS7CVE3Z7A",
+                "type": "label",
+                "name": "label_bt_teste_leque",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 35,
+                "x_unit": "px",
+                "y": 64,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "LEQUE"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJR8KGON5ML",
+            "type": "button",
+            "name": "button_top",
+            "width": 780,
+            "width_unit": "px",
+            "height": 60,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 10,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_width": 3
+              }
+            },
+            "add_flag": [],
+            "remove_flag": [
+              "LV_OBJ_FLAG_CLICKABLE",
+              "LV_OBJ_FLAG_CLICK_FOCUSABLE"
+            ],
+            "children": [
+              {
+                "id": "label_MRJR9W1256G1",
+                "type": "label",
+                "name": "label_bt_top",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 143,
+                "x_unit": "px",
+                "y": -2,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 30
+                  }
+                },
+                "text": "SELECIONE O TIPO DE TESTE"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJR46QK4GVD",
+            "type": "button",
+            "name": "button_home",
+            "width": 100,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 690,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJR739QGZFD",
+                "type": "image",
+                "name": "image_bt_home",
+                "width": 50,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 2,
+                "x_unit": "px",
+                "y": -9,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/home.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJR3VB8N8I9",
+            "type": "button",
+            "name": "button_bottom",
+            "width": 550,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 125,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "add_flag": [],
+            "remove_flag": [
+              "LV_OBJ_FLAG_CLICKABLE",
+              "LV_OBJ_FLAG_CLICK_FOCUSABLE"
+            ]
+          },
+          {
+            "id": "button_MRJR3MBQQKHC",
+            "type": "button",
+            "name": "button_voltar",
+            "width": 100,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJR6AM6CNFI",
+                "type": "image",
+                "name": "image_bt_voltar",
+                "width": 50,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 2,
+                "x_unit": "px",
+                "y": -9,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/seta_esquerda.png"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "screen_13ngqi4",
+        "name": "screen_testes_automaticos_2",
+        "type": "screen",
+        "style": {
+          "LV_PART_MAIN|LV_STATE_DEFAULT": {
+            "part": "LV_PART_MAIN",
+            "state": "LV_STATE_DEFAULT",
+            "bg_color": "#000000"
+          }
+        },
+        "children": [
+          {
+            "id": "button_MRJTTCPDNE4V",
+            "type": "button",
+            "name": "button_teste_circulacao",
+            "width": 187,
+            "width_unit": "px",
+            "height": 157,
+            "height_unit": "px",
+            "x": 207,
+            "x_unit": "px",
+            "y": 80,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJTYGVBEDPS",
+                "type": "image",
+                "name": "image_bt_teste_circulacao",
+                "width": 40,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 50,
+                "x_unit": "px",
+                "y": 10,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/ciclo.png"
+              },
+              {
+                "id": "label_MRJTXTK9HVYX",
+                "type": "label",
+                "name": "label_teste_circulacao",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 3,
+                "x_unit": "px",
+                "y": 64,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "CIRCULAÇÃO"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJTSOE9UNBJ",
+            "type": "button",
+            "name": "button_leque_vazao_equa",
+            "width": 187,
+            "width_unit": "px",
+            "height": 157,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 80,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJTYDIOS4BH",
+                "type": "image",
+                "name": "image_bt_leque_equa_vazao",
+                "width": 40,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 50,
+                "x_unit": "px",
+                "y": 10,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/equalizacao.png"
+              },
+              {
+                "id": "label_MRJTWF0ZT9IJ",
+                "type": "label",
+                "name": "label_leque_equa_vazao",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 1,
+                "x_unit": "px",
+                "y": 64,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 18
+                  }
+                },
+                "text": "LEQUE, VAZÃO\nEQUALIZAÇÃO"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJTPZPRW882",
+            "type": "button",
+            "name": "button_top",
+            "width": 780,
+            "width_unit": "px",
+            "height": 60,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 10,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "add_flag": [],
+            "remove_flag": [
+              "LV_OBJ_FLAG_CLICKABLE",
+              "LV_OBJ_FLAG_CLICK_FOCUSABLE"
+            ],
+            "children": [
+              {
+                "id": "label_MRJTR81SMBK8",
+                "type": "label",
+                "name": "label_bt_top",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 143,
+                "x_unit": "px",
+                "y": -2,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 30
+                  }
+                },
+                "text": "SELECIONE O TIPO DE TESTE"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJTKN9SQ18Z",
+            "type": "button",
+            "name": "button_home",
+            "width": 100,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 690,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJTP67RQ39N",
+                "type": "image",
+                "name": "image_bt_home",
+                "width": 50,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 2,
+                "x_unit": "px",
+                "y": -9,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/home.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJTKBW54R6P",
+            "type": "button",
+            "name": "button_bottom",
+            "width": 550,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 125,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "add_flag": [],
+            "remove_flag": [
+              "LV_OBJ_FLAG_CLICKABLE",
+              "LV_OBJ_FLAG_CLICK_FOCUSABLE"
+            ]
+          },
+          {
+            "id": "button_MRJTK18EE7N7",
+            "type": "button",
+            "name": "button_voltar",
+            "width": 100,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJTOIC4U55U",
                 "type": "image",
                 "name": "image_bt_voltar",
                 "width": 50,

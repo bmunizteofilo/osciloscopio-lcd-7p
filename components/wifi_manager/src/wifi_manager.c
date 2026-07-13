@@ -5,10 +5,16 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "nvs.h"
 
 #define WIFI_MANAGER_TASK_STACK_SIZE 4096
 #define WIFI_MANAGER_TASK_PRIORITY 5
 #define WIFI_MANAGER_QUEUE_LENGTH 12
+#define WIFI_MANAGER_MAX_SAVED_NETWORKS 10
+#define WIFI_MANAGER_STORAGE_NAMESPACE "redes_wifi"
+#define WIFI_MANAGER_STORAGE_KEY_ENABLED "ativado"
+#define WIFI_MANAGER_STORAGE_KEY_PROFILES "perfis"
+#define WIFI_MANAGER_STORAGE_VERSION 1U
 
 /** @brief Comando ou notificação processada pela task do core 0. */
 typedef enum {
@@ -30,15 +36,163 @@ typedef struct {
     } data;
 } wifi_manager_command_t;
 
+/** @brief Perfil de rede salvo de forma persistente na NVS. */
+typedef struct {
+    char ssid[DRIVER_WIFI_SSID_MAX_LENGTH + 1];
+    char password[65];
+    uint32_t last_used_order;
+} wifi_manager_saved_network_t;
+
+/** @brief Estrutura serializada no namespace NVS de redes Wi-Fi. */
+typedef struct {
+    uint32_t version;
+    uint32_t next_order;
+    uint8_t count;
+    wifi_manager_saved_network_t networks[WIFI_MANAGER_MAX_SAVED_NETWORKS];
+} wifi_manager_saved_networks_t;
+
 /** @brief Contexto protegido e compartilhado com a UI. */
 typedef struct {
     QueueHandle_t queue;
     SemaphoreHandle_t lock;
     wifi_manager_status_t status;
+    wifi_manager_saved_networks_t saved_networks;
+    bool pending_manual_profile;
+    char pending_ssid[DRIVER_WIFI_SSID_MAX_LENGTH + 1];
+    char pending_password[65];
 } wifi_manager_context_t;
 
 /** @brief Estado persistente do Wi-Fi da aplicação. */
 static wifi_manager_context_t s_wifi_manager;
+
+/** @brief Restaura o estado ligado/desligado salvo para o Wi-Fi. */
+static bool wifi_manager_load_enabled_state(void)
+{
+    nvs_handle_t handle;
+    uint8_t enabled = 0;
+    if (nvs_open(WIFI_MANAGER_STORAGE_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) {
+        return false;
+    }
+    const esp_err_t err = nvs_get_u8(handle, WIFI_MANAGER_STORAGE_KEY_ENABLED, &enabled);
+    nvs_close(handle);
+    return err == ESP_OK && enabled != 0;
+}
+
+/** @brief Persiste o estado ligado/desligado escolhido pelo usuário. */
+static void wifi_manager_save_enabled_state(bool enabled)
+{
+    nvs_handle_t handle;
+    if (nvs_open(WIFI_MANAGER_STORAGE_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return;
+    }
+    if (nvs_set_u8(handle, WIFI_MANAGER_STORAGE_KEY_ENABLED, enabled ? 1U : 0U) == ESP_OK) {
+        nvs_commit(handle);
+    }
+    nvs_close(handle);
+}
+
+/** @brief Carrega os perfis Wi-Fi salvos, descartando dados inválidos. */
+static void wifi_manager_load_saved_networks(void)
+{
+    wifi_manager_saved_networks_t saved_networks = {.version = WIFI_MANAGER_STORAGE_VERSION, .next_order = 1U};
+    nvs_handle_t handle;
+    size_t size = sizeof(saved_networks);
+    if (nvs_open(WIFI_MANAGER_STORAGE_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+        if (nvs_get_blob(handle, WIFI_MANAGER_STORAGE_KEY_PROFILES, &saved_networks, &size) != ESP_OK ||
+            size != sizeof(saved_networks) || saved_networks.version != WIFI_MANAGER_STORAGE_VERSION ||
+            saved_networks.count > WIFI_MANAGER_MAX_SAVED_NETWORKS) {
+            saved_networks = (wifi_manager_saved_networks_t){.version = WIFI_MANAGER_STORAGE_VERSION, .next_order = 1U};
+        }
+        nvs_close(handle);
+    }
+    if (saved_networks.next_order == 0U) {
+        saved_networks.next_order = 1U;
+    }
+    s_wifi_manager.saved_networks = saved_networks;
+}
+
+/** @brief Salva a lista atual de até dez perfis Wi-Fi na NVS. */
+static void wifi_manager_save_saved_networks(void)
+{
+    nvs_handle_t handle;
+    if (nvs_open(WIFI_MANAGER_STORAGE_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return;
+    }
+    if (nvs_set_blob(handle, WIFI_MANAGER_STORAGE_KEY_PROFILES, &s_wifi_manager.saved_networks,
+                     sizeof(s_wifi_manager.saved_networks)) == ESP_OK) {
+        nvs_commit(handle);
+    }
+    nvs_close(handle);
+}
+
+/** @brief Localiza um perfil salvo pelo SSID ou retorna -1 quando inexistente. */
+static int32_t wifi_manager_find_saved_network(const char *ssid)
+{
+    for (uint8_t index = 0; index < s_wifi_manager.saved_networks.count; index++) {
+        if (strcmp(s_wifi_manager.saved_networks.networks[index].ssid, ssid) == 0) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+/** @brief Salva ou atualiza o perfil cuja conexão manual acabou de ser confirmada. */
+static void wifi_manager_store_pending_manual_profile(void)
+{
+    if (!s_wifi_manager.pending_manual_profile) {
+        return;
+    }
+    int32_t index = wifi_manager_find_saved_network(s_wifi_manager.pending_ssid);
+    if (index < 0 && s_wifi_manager.saved_networks.count < WIFI_MANAGER_MAX_SAVED_NETWORKS) {
+        index = s_wifi_manager.saved_networks.count++;
+    }
+    if (index < 0) {
+        index = 0;
+        for (uint8_t candidate = 1; candidate < WIFI_MANAGER_MAX_SAVED_NETWORKS; candidate++) {
+            if (s_wifi_manager.saved_networks.networks[candidate].last_used_order <
+                s_wifi_manager.saved_networks.networks[index].last_used_order) {
+                index = candidate;
+            }
+        }
+    }
+    wifi_manager_saved_network_t *profile = &s_wifi_manager.saved_networks.networks[index];
+    strncpy(profile->ssid, s_wifi_manager.pending_ssid, DRIVER_WIFI_SSID_MAX_LENGTH);
+    profile->ssid[DRIVER_WIFI_SSID_MAX_LENGTH] = '\0';
+    strncpy(profile->password, s_wifi_manager.pending_password, sizeof(profile->password) - 1);
+    profile->password[sizeof(profile->password) - 1] = '\0';
+    profile->last_used_order = s_wifi_manager.saved_networks.next_order++;
+    if (s_wifi_manager.saved_networks.next_order == 0U) {
+        s_wifi_manager.saved_networks.next_order = 1U;
+    }
+    wifi_manager_save_saved_networks();
+    s_wifi_manager.pending_manual_profile = false;
+}
+
+/** @brief Tenta conectar à rede salva mais recentemente usada e visível no scan. */
+static void wifi_manager_try_saved_network(void)
+{
+    int32_t selected_index = -1;
+    for (uint16_t network_index = 0; network_index < s_wifi_manager.status.network_count; network_index++) {
+        const int32_t saved_index = wifi_manager_find_saved_network(s_wifi_manager.status.networks[network_index].ssid);
+        if (saved_index >= 0 && (selected_index < 0 ||
+                                 s_wifi_manager.saved_networks.networks[saved_index].last_used_order >
+                                 s_wifi_manager.saved_networks.networks[selected_index].last_used_order)) {
+            selected_index = saved_index;
+        }
+    }
+    if (selected_index < 0 || driver_wifi_connect(s_wifi_manager.saved_networks.networks[selected_index].ssid,
+                                                   s_wifi_manager.saved_networks.networks[selected_index].password) != ESP_OK) {
+        return;
+    }
+    if (xSemaphoreTake(s_wifi_manager.lock, portMAX_DELAY) == pdTRUE) {
+        s_wifi_manager.status.connecting = true;
+        s_wifi_manager.status.connection_failed = false;
+        strncpy(s_wifi_manager.status.connected_ssid, s_wifi_manager.saved_networks.networks[selected_index].ssid,
+                DRIVER_WIFI_SSID_MAX_LENGTH);
+        s_wifi_manager.status.connected_ssid[DRIVER_WIFI_SSID_MAX_LENGTH] = '\0';
+        xSemaphoreGive(s_wifi_manager.lock);
+    }
+}
 
 /**
  * @brief Recebe eventos do driver e os encaminha à task do core 0.
@@ -69,6 +223,9 @@ static void wifi_manager_update_scan_results(void)
         s_wifi_manager.status = status;
         xSemaphoreGive(s_wifi_manager.lock);
     }
+    if (status.enabled && !status.connected && !status.connecting) {
+        wifi_manager_try_saved_network();
+    }
 }
 
 /**
@@ -79,7 +236,15 @@ static void wifi_manager_update_scan_results(void)
 static void wifi_manager_task(void *argument)
 {
     (void)argument;
-    driver_wifi_init(wifi_manager_driver_event_cb, &s_wifi_manager);
+    if (driver_wifi_init(wifi_manager_driver_event_cb, &s_wifi_manager) != ESP_OK) {
+        vTaskDelete(NULL);
+        return;
+    }
+    wifi_manager_load_saved_networks();
+    if (wifi_manager_load_enabled_state()) {
+        const wifi_manager_command_t command = {.type = WIFI_MANAGER_COMMAND_SET_ENABLED, .data.enabled = true};
+        xQueueSend(s_wifi_manager.queue, &command, 0);
+    }
     for (;;) {
         wifi_manager_command_t command = {0};
         if (xQueueReceive(s_wifi_manager.queue, &command, portMAX_DELAY) != pdTRUE) {
@@ -89,6 +254,7 @@ static void wifi_manager_task(void *argument)
             if (driver_wifi_set_enabled(command.data.enabled) != ESP_OK) {
                 continue;
             }
+            wifi_manager_save_enabled_state(command.data.enabled);
             if (xSemaphoreTake(s_wifi_manager.lock, portMAX_DELAY) == pdTRUE) {
                 s_wifi_manager.status.enabled = command.data.enabled;
                 s_wifi_manager.status.scanning = command.data.enabled;
@@ -108,6 +274,12 @@ static void wifi_manager_task(void *argument)
         } else if (command.type == WIFI_MANAGER_COMMAND_CONNECT) {
             if (driver_wifi_connect(command.data.credentials.ssid, command.data.credentials.password) == ESP_OK &&
                 xSemaphoreTake(s_wifi_manager.lock, portMAX_DELAY) == pdTRUE) {
+                s_wifi_manager.pending_manual_profile = true;
+                strncpy(s_wifi_manager.pending_ssid, command.data.credentials.ssid, DRIVER_WIFI_SSID_MAX_LENGTH);
+                s_wifi_manager.pending_ssid[DRIVER_WIFI_SSID_MAX_LENGTH] = '\0';
+                strncpy(s_wifi_manager.pending_password, command.data.credentials.password,
+                        sizeof(s_wifi_manager.pending_password) - 1);
+                s_wifi_manager.pending_password[sizeof(s_wifi_manager.pending_password) - 1] = '\0';
                 s_wifi_manager.status.connecting = true;
                 s_wifi_manager.status.connection_failed = false;
                 strncpy(s_wifi_manager.status.connected_ssid,
@@ -122,6 +294,9 @@ static void wifi_manager_task(void *argument)
             if (command.data.event == DRIVER_WIFI_EVENT_CONNECTED) {
                 s_wifi_manager.status.connected = true;
                 s_wifi_manager.status.connecting = false;
+                xSemaphoreGive(s_wifi_manager.lock);
+                wifi_manager_store_pending_manual_profile();
+                continue;
             } else {
                 s_wifi_manager.status.connection_failed = s_wifi_manager.status.connecting;
                 s_wifi_manager.status.connected = false;
@@ -129,6 +304,7 @@ static void wifi_manager_task(void *argument)
                 if (s_wifi_manager.status.connection_failed) {
                     s_wifi_manager.status.connected_ssid[0] = '\0';
                 }
+                s_wifi_manager.pending_manual_profile = false;
             }
             xSemaphoreGive(s_wifi_manager.lock);
         }
