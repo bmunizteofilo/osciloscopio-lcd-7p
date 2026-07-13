@@ -6,7 +6,7 @@
   "toolVendor": "NXP Semiconductors",
   "createDate": "2026-07-11",
   "createVersion": "2.0.0",
-  "lastModified": "2026-07-13T18:36:31.992Z",
+  "lastModified": "2026-07-13T21:42:32.706Z",
   "description": "",
   "metadata": {
     "board": {
@@ -670,16 +670,40 @@
         },
         "children": [
           {
+            "id": "button_MRJKLASJ0CYC",
+            "type": "button",
+            "name": "button_bottom",
+            "width": 550,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 125,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2f3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            }
+          },
+          {
             "id": "button_MRH11DBONLKA",
             "type": "button",
             "name": "button_home",
-            "width": 668,
+            "width": 100,
             "width_unit": "px",
-            "height": 56,
+            "height": 50,
             "height_unit": "px",
-            "x": 120,
+            "x": 690,
             "x_unit": "px",
-            "y": 407,
+            "y": 420,
             "y_unit": "px",
             "align": "LV_ALIGN_TOP_LEFT",
             "style": {
@@ -701,9 +725,9 @@
                 "width_unit": "px",
                 "height": 40,
                 "height_unit": "px",
-                "x": 574,
+                "x": 2,
                 "x_unit": "px",
-                "y": -6,
+                "y": -9,
                 "y_unit": "px",
                 "align": "LV_ALIGN_TOP_LEFT",
                 "style": {
@@ -724,11 +748,11 @@
             "name": "button_configuracoes_voltar",
             "width": 100,
             "width_unit": "px",
-            "height": 56,
+            "height": 50,
             "height_unit": "px",
             "x": 10,
             "x_unit": "px",
-            "y": 407,
+            "y": 420,
             "y_unit": "px",
             "align": "LV_ALIGN_TOP_LEFT",
             "style": {
@@ -750,9 +774,9 @@
                 "width_unit": "px",
                 "height": 40,
                 "height_unit": "px",
-                "x": 2,
+                "x": 1,
                 "x_unit": "px",
-                "y": -6,
+                "y": -9,
                 "y_unit": "px",
                 "align": "LV_ALIGN_TOP_LEFT",
                 "style": {
@@ -771,13 +795,13 @@
             "id": "container_MRH0G6QVBPHR",
             "type": "container",
             "name": "container_configuracoes",
-            "width": 399,
+            "width": 385,
             "width_unit": "px",
-            "height": 387,
+            "height": 400,
             "height_unit": "px",
             "x": 10,
             "x_unit": "px",
-            "y": 12,
+            "y": 10,
             "y_unit": "px",
             "align": "LV_ALIGN_TOP_LEFT",
             "style": {
@@ -795,7 +819,7 @@
                 "id": "button_MRH18FJQII5A",
                 "type": "button",
                 "name": "button_sobre",
-                "width": 358,
+                "width": 345,
                 "width_unit": "px",
                 "height": 50,
                 "height_unit": "px",
@@ -835,7 +859,7 @@
                         "text_size": 20
                       }
                     },
-                    "text": "Sobre o Equipamento"
+                    "text": "Sobre "
                   },
                   {
                     "id": "image_MRH1OBDMWN9V",
@@ -866,7 +890,7 @@
                 "id": "button_MRH189BVPSTF",
                 "type": "button",
                 "name": "button_manutencao",
-                "width": 358,
+                "width": 345,
                 "width_unit": "px",
                 "height": 50,
                 "height_unit": "px",
@@ -906,7 +930,7 @@
                         "text_size": 20
                       }
                     },
-                    "text": "Manutenção / Calibração\n"
+                    "text": "Manutenção \n"
                   },
                   {
                     "id": "image_MRH1KYW5YIDI",
@@ -937,7 +961,7 @@
                 "id": "button_MRH17WTOK9IT",
                 "type": "button",
                 "name": "button_presets",
-                "width": 358,
+                "width": 345,
                 "width_unit": "px",
                 "height": 50,
                 "height_unit": "px",
@@ -977,7 +1001,7 @@
                         "text_size": 20
                       }
                     },
-                    "text": "Presets / Receitas"
+                    "text": "Presets "
                   },
                   {
                     "id": "image_MRH1I0G4369Z",
@@ -1008,7 +1032,7 @@
                 "id": "button_MRH17PBST71U",
                 "type": "button",
                 "name": "button_parametros_gerais",
-                "width": 358,
+                "width": 345,
                 "width_unit": "px",
                 "height": 50,
                 "height_unit": "px",
@@ -1079,7 +1103,7 @@
                 "id": "button_MRH0SAX4W9XN",
                 "type": "button",
                 "name": "button_bluetooth",
-                "width": 358,
+                "width": 345,
                 "width_unit": "px",
                 "height": 50,
                 "height_unit": "px",
@@ -1150,7 +1174,7 @@
                 "id": "button_MRH0HO6YAWA7",
                 "type": "button",
                 "name": "button_wifi",
-                "width": 358,
+                "width": 345,
                 "width_unit": "px",
                 "height": 50,
                 "height_unit": "px",

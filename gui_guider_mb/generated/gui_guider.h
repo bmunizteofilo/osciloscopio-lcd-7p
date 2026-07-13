@@ -76,23 +76,24 @@ typedef struct {
 
 typedef struct {
     lv_obj_t * screen;
-    lv_obj_t * button_sobre;
-    lv_obj_t * button_sobre_label_bt_sobre;
-    lv_obj_t * button_sobre_image_bt_sobre;
-    lv_obj_t * button_manutencao;
-    lv_obj_t * button_manutencao_label_bt_manutencao;
-    lv_obj_t * button_manutencao_image_bt_manutencao;
-    lv_obj_t * button_presets;
-    lv_obj_t * button_presets_label_bt_presets;
-    lv_obj_t * button_presets_image_bt_presets;
-    lv_obj_t * button_parametros_gerais;
-    lv_obj_t * button_parametros_gerais_label_bt_parametros_gerais;
-    lv_obj_t * button_parametros_gerais_image_bt_parametros_gerais;
+    lv_obj_t * button_bottom;
     lv_obj_t * button_home;
     lv_obj_t * button_home_image_bt_home;
     lv_obj_t * button_configuracoes_voltar;
     lv_obj_t * button_configuracoes_voltar_image_bt_voltar;
     lv_obj_t * container_configuracoes;
+    lv_obj_t * container_configuracoes_button_sobre;
+    lv_obj_t * button_sobre_label_bt_sobre;
+    lv_obj_t * button_sobre_image_bt_sobre;
+    lv_obj_t * container_configuracoes_button_manutencao;
+    lv_obj_t * button_manutencao_label_bt_manutencao;
+    lv_obj_t * button_manutencao_image_bt_manutencao;
+    lv_obj_t * container_configuracoes_button_presets;
+    lv_obj_t * button_presets_label_bt_presets;
+    lv_obj_t * button_presets_image_bt_presets;
+    lv_obj_t * container_configuracoes_button_parametros_gerais;
+    lv_obj_t * button_parametros_gerais_label_bt_parametros_gerais;
+    lv_obj_t * button_parametros_gerais_image_bt_parametros_gerais;
     lv_obj_t * container_configuracoes_button_bluetooth;
     lv_obj_t * button_bluetooth_label_1;
     lv_obj_t * button_bluetooth_image_bluetooth;

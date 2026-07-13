@@ -523,7 +523,7 @@ static void ui_flow_general_row(lv_obj_t *parent, const char *name, const char *
 {
     lv_obj_t *row = lv_button_create(parent);
     lv_obj_set_size(row, 340, 50);
-    lv_obj_set_pos(row, 15, y);
+    lv_obj_set_pos(row, 15, y + 5);
     ui_flow_general_style_control(row);
     lv_obj_add_event_cb(row, ui_flow_general_option_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)option);
     lv_obj_t *name_label = lv_label_create(row);
@@ -551,8 +551,8 @@ static void ui_flow_show_general_panel(void)
     ui_flow_destroy_maintenance_panel();
     ui_flow_destroy_general_panel();
     s_ui_flow.general_panel = lv_obj_create(guider_ui.screen_configuracoes.screen);
-    lv_obj_set_size(s_ui_flow.general_panel, 370, 376);
-    lv_obj_set_pos(s_ui_flow.general_panel, 420, 21);
+    lv_obj_set_size(s_ui_flow.general_panel, 380, 400);
+    lv_obj_set_pos(s_ui_flow.general_panel, 405, 10);
     lv_obj_set_style_bg_color(s_ui_flow.general_panel, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_border_width(s_ui_flow.general_panel, 3, LV_PART_MAIN);
     lv_obj_set_style_border_color(s_ui_flow.general_panel, lv_color_hex(0x2f3539), LV_PART_MAIN);
@@ -598,7 +598,7 @@ static void ui_flow_about_row(lv_obj_t *parent, const char *text, int32_t y)
 {
     lv_obj_t *row = lv_button_create(parent);
     lv_obj_set_size(row, 340, 50);
-    lv_obj_set_pos(row, 15, y);
+    lv_obj_set_pos(row, 15, y + 5);
     ui_flow_general_style_control(row);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_t *label = lv_label_create(row);
@@ -617,8 +617,8 @@ static void ui_flow_show_about_panel(void)
     ui_flow_destroy_about_panel();
     ui_flow_destroy_maintenance_panel();
     s_ui_flow.about_panel = lv_obj_create(guider_ui.screen_configuracoes.screen);
-    lv_obj_set_size(s_ui_flow.about_panel, 370, 376);
-    lv_obj_set_pos(s_ui_flow.about_panel, 420, 21);
+    lv_obj_set_size(s_ui_flow.about_panel, 385, 400);
+    lv_obj_set_pos(s_ui_flow.about_panel, 405, 10);
     lv_obj_set_style_bg_color(s_ui_flow.about_panel, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_border_width(s_ui_flow.about_panel, 3, LV_PART_MAIN);
     lv_obj_set_style_border_color(s_ui_flow.about_panel, lv_color_hex(0x2f3539), LV_PART_MAIN);
@@ -648,7 +648,7 @@ static void ui_flow_maintenance_row(lv_obj_t *parent, const char *text, int32_t 
 {
     lv_obj_t *row = lv_button_create(parent);
     lv_obj_set_size(row, 340, 50);
-    lv_obj_set_pos(row, 15, y);
+    lv_obj_set_pos(row, 15, y + 5);
     ui_flow_general_style_control(row);
     lv_obj_add_event_cb(row, ui_flow_maintenance_option_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label = lv_label_create(row);
@@ -680,8 +680,8 @@ static void ui_flow_show_maintenance_panel(void)
     ui_flow_destroy_about_panel();
     ui_flow_destroy_maintenance_panel();
     s_ui_flow.maintenance_panel = lv_obj_create(guider_ui.screen_configuracoes.screen);
-    lv_obj_set_size(s_ui_flow.maintenance_panel, 370, 376);
-    lv_obj_set_pos(s_ui_flow.maintenance_panel, 420, 21);
+    lv_obj_set_size(s_ui_flow.maintenance_panel, 380, 400);
+    lv_obj_set_pos(s_ui_flow.maintenance_panel, 405, 10);
     lv_obj_set_style_bg_color(s_ui_flow.maintenance_panel, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_border_width(s_ui_flow.maintenance_panel, 3, LV_PART_MAIN);
     lv_obj_set_style_border_color(s_ui_flow.maintenance_panel, lv_color_hex(0x2f3539), LV_PART_MAIN);
@@ -1047,8 +1047,8 @@ static void ui_flow_show_bluetooth_panel(void)
     }
     lv_obj_t *screen = guider_ui.screen_configuracoes.screen;
     s_ui_flow.bluetooth_panel = lv_obj_create(screen);
-    lv_obj_set_size(s_ui_flow.bluetooth_panel, 370, 376);
-    lv_obj_set_pos(s_ui_flow.bluetooth_panel, 420, 21);
+    lv_obj_set_size(s_ui_flow.bluetooth_panel, 380, 400);
+    lv_obj_set_pos(s_ui_flow.bluetooth_panel, 405, 10);
     lv_obj_set_style_bg_color(s_ui_flow.bluetooth_panel, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_ui_flow.bluetooth_panel, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_ui_flow.bluetooth_panel, 3, LV_PART_MAIN);
@@ -1058,7 +1058,7 @@ static void ui_flow_show_bluetooth_panel(void)
     lv_obj_clear_flag(s_ui_flow.bluetooth_panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *header = lv_button_create(s_ui_flow.bluetooth_panel);
     lv_obj_set_size(header, 340, 50);
-    lv_obj_set_pos(header, 15, 13);
+    lv_obj_set_pos(header, 15, 18);
     lv_obj_set_style_bg_color(header, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_border_width(header, 3, LV_PART_MAIN);
     lv_obj_set_style_border_color(header, lv_color_hex(0x2f3539), LV_PART_MAIN);
@@ -1073,11 +1073,11 @@ static void ui_flow_show_bluetooth_panel(void)
     lv_obj_set_style_bg_color(s_ui_flow.bluetooth_toggle, lv_color_hex(0x455a64), LV_PART_INDICATOR | LV_STATE_DEFAULT);
     lv_obj_add_event_cb(s_ui_flow.bluetooth_toggle, ui_flow_bluetooth_toggle_cb, LV_EVENT_VALUE_CHANGED, NULL);
     s_ui_flow.bluetooth_status = lv_label_create(s_ui_flow.bluetooth_panel);
-    lv_obj_set_pos(s_ui_flow.bluetooth_status, 16, 72);
+    lv_obj_set_pos(s_ui_flow.bluetooth_status, 16, 77);
     lv_obj_set_style_text_color(s_ui_flow.bluetooth_status, lv_color_hex(0xffffff), LV_PART_MAIN);
     s_ui_flow.bluetooth_device_list = lv_obj_create(s_ui_flow.bluetooth_panel);
     lv_obj_set_size(s_ui_flow.bluetooth_device_list, 340, 270);
-    lv_obj_align(s_ui_flow.bluetooth_device_list, LV_ALIGN_TOP_MID, 0, 94);
+    lv_obj_align(s_ui_flow.bluetooth_device_list, LV_ALIGN_TOP_MID, 0, 99);
     lv_obj_set_style_bg_color(s_ui_flow.bluetooth_device_list, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_border_width(s_ui_flow.bluetooth_device_list, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(s_ui_flow.bluetooth_device_list, 0, LV_PART_MAIN);
@@ -1128,8 +1128,8 @@ static void ui_flow_show_wifi_panel(void)
     ui_flow_destroy_maintenance_panel();
     lv_obj_t *screen = guider_ui.screen_configuracoes.screen;
     s_ui_flow.wifi_panel = lv_obj_create(screen);
-    lv_obj_set_size(s_ui_flow.wifi_panel, 370, 376);
-    lv_obj_set_pos(s_ui_flow.wifi_panel, 420, 21);
+    lv_obj_set_size(s_ui_flow.wifi_panel, 380, 400);
+    lv_obj_set_pos(s_ui_flow.wifi_panel, 405, 10);
     lv_obj_set_style_bg_color(s_ui_flow.wifi_panel, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_ui_flow.wifi_panel, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_ui_flow.wifi_panel, 3, LV_PART_MAIN);
@@ -1140,7 +1140,7 @@ static void ui_flow_show_wifi_panel(void)
 
     lv_obj_t *header = lv_button_create(s_ui_flow.wifi_panel);
     lv_obj_set_size(header, 340, 50);
-    lv_obj_set_pos(header, 15, 13);
+    lv_obj_set_pos(header, 15, 18);
     lv_obj_set_style_bg_color(header, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_border_width(header, 3, LV_PART_MAIN);
     lv_obj_set_style_border_color(header, lv_color_hex(0x2f3539), LV_PART_MAIN);
@@ -1156,14 +1156,14 @@ static void ui_flow_show_wifi_panel(void)
     lv_obj_add_event_cb(s_ui_flow.wifi_toggle, ui_flow_wifi_toggle_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     s_ui_flow.wifi_connection_label = lv_label_create(s_ui_flow.wifi_panel);
-    lv_obj_set_pos(s_ui_flow.wifi_connection_label, 16, 70);
+    lv_obj_set_pos(s_ui_flow.wifi_connection_label, 16, 75);
     lv_obj_set_style_text_color(s_ui_flow.wifi_connection_label, lv_color_hex(0x00c853), LV_PART_MAIN);
     s_ui_flow.wifi_status = lv_label_create(s_ui_flow.wifi_panel);
-    lv_obj_set_pos(s_ui_flow.wifi_status, 116, 70);
+    lv_obj_set_pos(s_ui_flow.wifi_status, 116, 75);
     lv_obj_set_style_text_color(s_ui_flow.wifi_status, lv_color_hex(0xffffff), LV_PART_MAIN);
     s_ui_flow.wifi_network_list = lv_obj_create(s_ui_flow.wifi_panel);
     lv_obj_set_size(s_ui_flow.wifi_network_list, 340, 270);
-    lv_obj_align(s_ui_flow.wifi_network_list, LV_ALIGN_TOP_MID, 0, 94);
+    lv_obj_align(s_ui_flow.wifi_network_list, LV_ALIGN_TOP_MID, 0, 99);
     lv_obj_set_flex_flow(s_ui_flow.wifi_network_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scroll_dir(s_ui_flow.wifi_network_list, LV_DIR_VER);
     lv_obj_set_style_bg_opa(s_ui_flow.wifi_network_list, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -1524,16 +1524,16 @@ static void ui_flow_show_settings(void)
                             LV_EVENT_CLICKED,
                             NULL);
     }
-    if (guider_ui.screen_configuracoes.button_parametros_gerais != NULL) {
-        lv_obj_add_event_cb(guider_ui.screen_configuracoes.button_parametros_gerais,
+    if (guider_ui.screen_configuracoes.container_configuracoes_button_parametros_gerais != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_configuracoes.container_configuracoes_button_parametros_gerais,
                             ui_flow_general_button_cb, LV_EVENT_CLICKED, NULL);
     }
-    if (guider_ui.screen_configuracoes.button_sobre != NULL) {
-        lv_obj_add_event_cb(guider_ui.screen_configuracoes.button_sobre,
+    if (guider_ui.screen_configuracoes.container_configuracoes_button_sobre != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_configuracoes.container_configuracoes_button_sobre,
                             ui_flow_about_button_cb, LV_EVENT_CLICKED, NULL);
     }
-    if (guider_ui.screen_configuracoes.button_manutencao != NULL) {
-        lv_obj_add_event_cb(guider_ui.screen_configuracoes.button_manutencao,
+    if (guider_ui.screen_configuracoes.container_configuracoes_button_manutencao != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_configuracoes.container_configuracoes_button_manutencao,
                             ui_flow_maintenance_button_cb, LV_EVENT_CLICKED, NULL);
     }
     ui_flow_show_wifi_panel();
