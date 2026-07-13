@@ -17,7 +17,7 @@
  *
  * Tool            : GUI Guider
  * Version         : 2.0.0
- * Generated on    : 11/07/2026
+ * Generated on    : 13/07/2026
  * ------------------------------------------------------------------------------
  */
 
@@ -54,7 +54,7 @@ void setup_screen_menu_principal(gg_ui_t * ui)
     lv_obj_set_align(ui->screen_menu_principal.button_limpeza_bico_image_bt_limpeza_bico, LV_ALIGN_TOP_LEFT);
     lv_obj_set_x(ui->screen_menu_principal.button_limpeza_bico_image_bt_limpeza_bico, 122);
     lv_obj_set_y(ui->screen_menu_principal.button_limpeza_bico_image_bt_limpeza_bico, 0);
-    lv_image_set_src(ui->screen_menu_principal.button_limpeza_bico_image_bt_limpeza_bico, &teste_100x100_RGB565A8);
+    lv_image_set_src(ui->screen_menu_principal.button_limpeza_bico_image_bt_limpeza_bico, &motocicleta_100x100_RGB565A8);
 
     // Style: ui->screen_menu_principal.button_limpeza_bico_image_bt_limpeza_bico [LV_PART_MAIN|LV_STATE_DEFAULT]
     lv_obj_set_style_recolor(ui->screen_menu_principal.button_limpeza_bico_image_bt_limpeza_bico, lv_color_hex(0xffffff),

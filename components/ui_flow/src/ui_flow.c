@@ -62,6 +62,8 @@ static const char s_ui_flow_calendar_years[] =
 
 static void ui_flow_show_main_menu(void);
 static void ui_flow_show_settings(void);
+static void ui_flow_show_bicos_step_one(void);
+static void ui_flow_show_bicos_step_two(void);
 static void ui_flow_destroy_wifi_panel(void);
 static void ui_flow_destroy_bluetooth_panel(void);
 static void ui_flow_destroy_general_panel(void);
@@ -930,7 +932,7 @@ static void ui_flow_main_menu_button_cb(lv_event_t *event)
 /**
  * @brief Cria sob demanda e carrega a tela do osciloscópio.
  *
- * @param[in] event Evento LVGL dos botões Modo Teste ou Limpeza de Bicos.
+ * @param[in] event Evento LVGL da escolha do tipo de bico.
  */
 static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
 {
@@ -946,6 +948,28 @@ static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
         return;
     }
     lv_screen_load_anim(osc_get_screen(), LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+}
+
+/**
+ * @brief Cria e exibe a primeira etapa da seleção de bicos.
+ *
+ * @param[in] event Evento LVGL dos botões Modo Teste ou Limpeza de Bicos.
+ */
+static void ui_flow_bicos_step_one_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_bicos_step_one();
+}
+
+/**
+ * @brief Avança da escolha do bico para a escolha do modo de teste.
+ *
+ * @param[in] event Evento LVGL do tipo de bico selecionado.
+ */
+static void ui_flow_bicos_step_two_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_bicos_step_two();
 }
 
 /** @brief Retorna do osciloscópio ao menu sem destruir sua tela persistente. */
@@ -988,19 +1012,77 @@ static void ui_flow_show_main_menu(void)
     }
     if (guider_ui.screen_menu_principal.button_modo_teste != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_menu_principal.button_modo_teste,
-                            ui_flow_oscilloscope_button_cb,
+                            ui_flow_bicos_step_one_button_cb,
                             LV_EVENT_CLICKED,
                             NULL);
     }
     if (guider_ui.screen_menu_principal.button_limpeza_bico != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_menu_principal.button_limpeza_bico,
-                            ui_flow_oscilloscope_button_cb,
+                            ui_flow_bicos_step_one_button_cb,
                             LV_EVENT_CLICKED,
                             NULL);
     }
     s_ui_flow.menu_clock_timer = lv_timer_create(ui_flow_menu_clock_update_cb, 1000, NULL);
     ui_flow_menu_clock_update_cb(s_ui_flow.menu_clock_timer);
     lv_screen_load_anim(guider_ui.screen_menu_principal.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, delete_previous_screen);
+}
+
+/** @brief Cria, conecta e carrega a tela de escolha do tipo de bico. */
+static void ui_flow_show_bicos_step_one(void)
+{
+    if (s_ui_flow.menu_clock_timer != NULL) {
+        lv_timer_delete(s_ui_flow.menu_clock_timer);
+        s_ui_flow.menu_clock_timer = NULL;
+    }
+    memset(&guider_ui.screen_bicos_step_one, 0, sizeof(guider_ui.screen_bicos_step_one));
+    setup_screen_bicos_step_one(&guider_ui);
+    if (guider_ui.screen_bicos_step_one.screen == NULL) {
+        return;
+    }
+    if (guider_ui.screen_bicos_step_one.button_voltar != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_bicos_step_one.button_voltar,
+                            ui_flow_main_menu_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_bicos_step_one.button_home != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_bicos_step_one.button_home,
+                            ui_flow_main_menu_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_bicos_step_one.button_bico_12v_comum != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_bicos_step_one.button_bico_12v_comum,
+                            ui_flow_bicos_step_two_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_bicos_step_one.button_bico_gdi != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_bicos_step_one.button_bico_gdi,
+                            ui_flow_bicos_step_two_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    lv_screen_load_anim(guider_ui.screen_bicos_step_one.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+}
+
+/** @brief Cria, conecta e carrega a tela de escolha do modo de teste. */
+static void ui_flow_show_bicos_step_two(void)
+{
+    memset(&guider_ui.screen_bicos_step_two, 0, sizeof(guider_ui.screen_bicos_step_two));
+    setup_screen_bicos_step_two(&guider_ui);
+    if (guider_ui.screen_bicos_step_two.screen == NULL) {
+        return;
+    }
+    if (guider_ui.screen_bicos_step_two.button_voltar != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_bicos_step_two.button_voltar,
+                            ui_flow_bicos_step_one_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_bicos_step_two.button_home != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_bicos_step_two.button_home,
+                            ui_flow_main_menu_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_bicos_step_two.button_modo_automatico != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_bicos_step_two.button_modo_automatico,
+                            ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_bicos_step_two.button_modo_manual != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_bicos_step_two.button_modo_manual,
+                            ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    lv_screen_load_anim(guider_ui.screen_bicos_step_two.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
 
 /**

@@ -17,7 +17,7 @@
  *
  * Tool            : GUI Guider
  * Version         : 2.0.0
- * Generated on    : 11/07/2026
+ * Generated on    : 13/07/2026
  * ------------------------------------------------------------------------------
  */
 
@@ -102,12 +102,48 @@ typedef struct {
 } gg_screen_configuracoes_t;
 
 typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * button_top;
+    lv_obj_t * button_top_label_bt_top;
+    lv_obj_t * button_bico_gdi;
+    lv_obj_t * button_bico_gdi_label_bt_bico_gdi;
+    lv_obj_t * button_bico_gdi_image_bt_gdi;
+    lv_obj_t * button_bico_12v_comum;
+    lv_obj_t * button_bico_12v_comum_label_bt_bico_comum;
+    lv_obj_t * button_bico_12v_comum_image_bt_bico_comum;
+    lv_obj_t * button_nothing;
+    lv_obj_t * button_home;
+    lv_obj_t * button_home_image_bt_home;
+    lv_obj_t * button_voltar;
+    lv_obj_t * button_voltar_image_bt_voltar;
+} gg_screen_bicos_step_one_t;
+
+typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * button_top;
+    lv_obj_t * button_top_label_bt_top;
+    lv_obj_t * button_modo_automatico;
+    lv_obj_t * button_modo_automatico_label_bt_modo_automatico;
+    lv_obj_t * button_modo_automatico_image_bt_modo_automatico;
+    lv_obj_t * button_modo_manual;
+    lv_obj_t * button_modo_manual_label_bt_modo_manual;
+    lv_obj_t * button_modo_manual_image_bt_modo_manual;
+    lv_obj_t * button_nothing;
+    lv_obj_t * button_home;
+    lv_obj_t * button_home_image_bt_home;
+    lv_obj_t * button_voltar;
+    lv_obj_t * button_voltar_image_bt_voltar;
+} gg_screen_bicos_step_two_t;
+
+typedef struct {
     gg_layer_sys_t layer_sys;
     gg_layer_top_t layer_top;
     gg_layer_bottom_t layer_bottom;
     gg_screen_splash_t screen_splash;
     gg_screen_menu_principal_t screen_menu_principal;
     gg_screen_configuracoes_t screen_configuracoes;
+    gg_screen_bicos_step_one_t screen_bicos_step_one;
+    gg_screen_bicos_step_two_t screen_bicos_step_two;
 } gg_ui_t;
 
 typedef struct {
@@ -127,6 +163,8 @@ void setup_layer_bottom(gg_ui_t * ui);
 void setup_screen_splash(gg_ui_t * ui);
 void setup_screen_menu_principal(gg_ui_t * ui);
 void setup_screen_configuracoes(gg_ui_t * ui);
+void setup_screen_bicos_step_one(gg_ui_t * ui);
+void setup_screen_bicos_step_two(gg_ui_t * ui);
 
 #ifdef __cplusplus
 }

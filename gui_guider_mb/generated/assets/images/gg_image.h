@@ -17,7 +17,7 @@
  *
  * Tool            : GUI Guider
  * Version         : 2.0.0
- * Generated on    : 11/07/2026
+ * Generated on    : 13/07/2026
  * ------------------------------------------------------------------------------
  */
 
@@ -35,15 +35,17 @@ LV_IMAGE_DECLARE(configuracoes_100x100_RGB565A8);
 LV_IMAGE_DECLARE(diagnostico_100x100_RGB565A8);
 LV_IMAGE_DECLARE(relatorio_100x100_RGB565A8);
 LV_IMAGE_DECLARE(pulso_100x100_RGB565A8);
-LV_IMAGE_DECLARE(teste_100x100_RGB565A8);
+LV_IMAGE_DECLARE(motocicleta_100x100_RGB565A8);
 LV_IMAGE_DECLARE(informacoes_51x28_RGB565A8);
 LV_IMAGE_DECLARE(manutencao_61x24_RGB565A8);
 LV_IMAGE_DECLARE(receita_62x33_RGB565A8);
 LV_IMAGE_DECLARE(geral_53x28_RGB565A8);
-LV_IMAGE_DECLARE(home_70x30_RGB565A8);
-LV_IMAGE_DECLARE(seta_esquerda_62x42_RGB565A8);
+LV_IMAGE_DECLARE(home_50x40_RGB565A8);
+LV_IMAGE_DECLARE(seta_esquerda_50x40_RGB565A8);
 LV_IMAGE_DECLARE(bluetooth_62x28_RGB565A8);
 LV_IMAGE_DECLARE(wifi_48x31_RGB565A8);
+LV_IMAGE_DECLARE(reproducao_100x100_RGB565A8);
+LV_IMAGE_DECLARE(manual_100x100_RGB565A8);
 
 #ifdef __cplusplus
 }

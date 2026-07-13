@@ -24,20 +24,9 @@
 #include "gg_event.h"
 #include "custom.h"
 
-static void screen_event_handler(lv_event_t * e)
+// No event handlers
+
+void gg_event_init_screen_bicos_step_one(gg_ui_t * ui)
 {
-    gg_ui_t * ui = lv_event_get_user_data(e);
-
-    lv_event_code_t code = lv_event_get_code(e);
-
-    switch(code) {
-
-        default:
-            break;
-    }
-}
-
-void gg_event_init_screen_splash(gg_ui_t * ui)
-{
-    lv_obj_add_event_cb(ui->screen_splash.screen, screen_event_handler, LV_EVENT_ALL, ui);
+    // No event callbacks
 }

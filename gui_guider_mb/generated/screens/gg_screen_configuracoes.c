@@ -17,7 +17,7 @@
  *
  * Tool            : GUI Guider
  * Version         : 2.0.0
- * Generated on    : 11/07/2026
+ * Generated on    : 13/07/2026
  * ------------------------------------------------------------------------------
  */
 
@@ -43,7 +43,7 @@ void setup_screen_configuracoes(gg_ui_t * ui)
     lv_obj_set_y(ui->screen_configuracoes.container_configuracoes, 16);
 
     // Style: ui->screen_configuracoes.container_configuracoes [LV_PART_MAIN|LV_STATE_DEFAULT]
-    lv_obj_set_style_bg_color(ui->screen_configuracoes.container_configuracoes, lv_color_hex(0x2196f3),
+    lv_obj_set_style_bg_color(ui->screen_configuracoes.container_configuracoes, lv_color_hex(0x101416),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui->screen_configuracoes.container_configuracoes, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(ui->screen_configuracoes.container_configuracoes, 3, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -60,7 +60,7 @@ void setup_screen_configuracoes(gg_ui_t * ui)
     lv_obj_set_y(ui->screen_configuracoes.container_configuracoes_button_wifi, -3);
 
     // Style: ui->screen_configuracoes.container_configuracoes_button_wifi [LV_PART_MAIN|LV_STATE_DEFAULT]
-    lv_obj_set_style_bg_color(ui->screen_configuracoes.container_configuracoes_button_wifi, lv_color_hex(0x000000),
+    lv_obj_set_style_bg_color(ui->screen_configuracoes.container_configuracoes_button_wifi, lv_color_hex(0x101416),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(ui->screen_configuracoes.container_configuracoes_button_wifi, 3,
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -110,14 +110,12 @@ void setup_screen_configuracoes(gg_ui_t * ui)
     lv_obj_set_y(ui->screen_configuracoes.container_configuracoes_button_bluetooth, 54);
 
     // Style: ui->screen_configuracoes.container_configuracoes_button_bluetooth [LV_PART_MAIN|LV_STATE_DEFAULT]
-    lv_obj_set_style_bg_color(ui->screen_configuracoes.container_configuracoes_button_bluetooth, lv_color_hex(0x000000),
+    lv_obj_set_style_bg_color(ui->screen_configuracoes.container_configuracoes_button_bluetooth, lv_color_hex(0x101416),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(ui->screen_configuracoes.container_configuracoes_button_bluetooth, 3,
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui->screen_configuracoes.container_configuracoes_button_bluetooth, lv_color_hex(0x2f3539),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui->screen_configuracoes.container_configuracoes_button_bluetooth, 0,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_opa(ui->screen_configuracoes.container_configuracoes_button_bluetooth, 255,
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
 
@@ -160,7 +158,7 @@ void setup_screen_configuracoes(gg_ui_t * ui)
     lv_obj_set_y(ui->screen_configuracoes.button_configuracoes_voltar, 407);
 
     // Style: ui->screen_configuracoes.button_configuracoes_voltar [LV_PART_MAIN|LV_STATE_DEFAULT]
-    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_configuracoes_voltar, lv_color_hex(0x000000),
+    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_configuracoes_voltar, lv_color_hex(0x101416),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui->screen_configuracoes.button_configuracoes_voltar, lv_color_hex(0x2f3539),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -170,12 +168,12 @@ void setup_screen_configuracoes(gg_ui_t * ui)
     // Create image: ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar
     ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar = lv_image_create(
                                                                                ui->screen_configuracoes.button_configuracoes_voltar);
-    lv_obj_set_width(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, 62);
-    lv_obj_set_height(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, 42);
+    lv_obj_set_width(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, 50);
+    lv_obj_set_height(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, 40);
     lv_obj_set_align(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_x(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, -4);
-    lv_obj_set_y(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, -7);
-    lv_image_set_src(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, &seta_esquerda_62x42_RGB565A8);
+    lv_obj_set_x(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, 2);
+    lv_obj_set_y(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, -6);
+    lv_image_set_src(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, &seta_esquerda_50x40_RGB565A8);
 
     // Style: ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar [LV_PART_MAIN|LV_STATE_DEFAULT]
     lv_obj_set_style_recolor(ui->screen_configuracoes.button_configuracoes_voltar_image_bt_voltar, lv_color_hex(0xffffff),
@@ -192,7 +190,7 @@ void setup_screen_configuracoes(gg_ui_t * ui)
     lv_obj_set_y(ui->screen_configuracoes.button_home, 407);
 
     // Style: ui->screen_configuracoes.button_home [LV_PART_MAIN|LV_STATE_DEFAULT]
-    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_home, lv_color_hex(0x000000),
+    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_home, lv_color_hex(0x101416),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui->screen_configuracoes.button_home, lv_color_hex(0x2f3539),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -201,12 +199,12 @@ void setup_screen_configuracoes(gg_ui_t * ui)
 
     // Create image: ui->screen_configuracoes.button_home_image_bt_home
     ui->screen_configuracoes.button_home_image_bt_home = lv_image_create(ui->screen_configuracoes.button_home);
-    lv_obj_set_width(ui->screen_configuracoes.button_home_image_bt_home, 70);
-    lv_obj_set_height(ui->screen_configuracoes.button_home_image_bt_home, 30);
+    lv_obj_set_width(ui->screen_configuracoes.button_home_image_bt_home, 50);
+    lv_obj_set_height(ui->screen_configuracoes.button_home_image_bt_home, 40);
     lv_obj_set_align(ui->screen_configuracoes.button_home_image_bt_home, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_x(ui->screen_configuracoes.button_home_image_bt_home, 551);
-    lv_obj_set_y(ui->screen_configuracoes.button_home_image_bt_home, -1);
-    lv_image_set_src(ui->screen_configuracoes.button_home_image_bt_home, &home_70x30_RGB565A8);
+    lv_obj_set_x(ui->screen_configuracoes.button_home_image_bt_home, 574);
+    lv_obj_set_y(ui->screen_configuracoes.button_home_image_bt_home, -6);
+    lv_image_set_src(ui->screen_configuracoes.button_home_image_bt_home, &home_50x40_RGB565A8);
 
     // Style: ui->screen_configuracoes.button_home_image_bt_home [LV_PART_MAIN|LV_STATE_DEFAULT]
     lv_obj_set_style_recolor(ui->screen_configuracoes.button_home_image_bt_home, lv_color_hex(0xfafafa),
@@ -222,7 +220,7 @@ void setup_screen_configuracoes(gg_ui_t * ui)
     lv_obj_set_y(ui->screen_configuracoes.button_parametros_gerais, 152);
 
     // Style: ui->screen_configuracoes.button_parametros_gerais [LV_PART_MAIN|LV_STATE_DEFAULT]
-    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_parametros_gerais, lv_color_hex(0x000000),
+    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_parametros_gerais, lv_color_hex(0x101416),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui->screen_configuracoes.button_parametros_gerais, lv_color_hex(0x2f3539),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -268,7 +266,7 @@ void setup_screen_configuracoes(gg_ui_t * ui)
     lv_obj_set_y(ui->screen_configuracoes.button_presets, 208);
 
     // Style: ui->screen_configuracoes.button_presets [LV_PART_MAIN|LV_STATE_DEFAULT]
-    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_presets, lv_color_hex(0x000000),
+    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_presets, lv_color_hex(0x101416),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui->screen_configuracoes.button_presets, lv_color_hex(0x2f3539),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -312,7 +310,7 @@ void setup_screen_configuracoes(gg_ui_t * ui)
     lv_obj_set_y(ui->screen_configuracoes.button_manutencao, 264);
 
     // Style: ui->screen_configuracoes.button_manutencao [LV_PART_MAIN|LV_STATE_DEFAULT]
-    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_manutencao, lv_color_hex(0x000000),
+    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_manutencao, lv_color_hex(0x101416),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui->screen_configuracoes.button_manutencao, lv_color_hex(0x2f3539),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -358,7 +356,7 @@ void setup_screen_configuracoes(gg_ui_t * ui)
     lv_obj_set_y(ui->screen_configuracoes.button_sobre, 320);
 
     // Style: ui->screen_configuracoes.button_sobre [LV_PART_MAIN|LV_STATE_DEFAULT]
-    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_sobre, lv_color_hex(0x000000),
+    lv_obj_set_style_bg_color(ui->screen_configuracoes.button_sobre, lv_color_hex(0x101416),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui->screen_configuracoes.button_sobre, lv_color_hex(0x2f3539),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);

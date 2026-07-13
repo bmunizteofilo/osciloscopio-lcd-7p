@@ -6,7 +6,7 @@
   "toolVendor": "NXP Semiconductors",
   "createDate": "2026-07-11",
   "createVersion": "2.0.0",
-  "lastModified": "2026-07-12T22:24:37.695Z",
+  "lastModified": "2026-07-13T14:45:40.675Z",
   "description": "",
   "metadata": {
     "board": {
@@ -651,7 +651,7 @@
                     "recolor_opa": 255
                   }
                 },
-                "src": "resources/image/teste.png"
+                "src": "resources/image/motocicleta.png"
               }
             ]
           }
@@ -686,7 +686,7 @@
               "LV_PART_MAIN|LV_STATE_DEFAULT": {
                 "part": "LV_PART_MAIN",
                 "state": "LV_STATE_DEFAULT",
-                "bg_color": "#000000",
+                "bg_color": "#101416",
                 "border_color": "#2f3539",
                 "border_opa": 255,
                 "border_width": 3
@@ -757,7 +757,7 @@
               "LV_PART_MAIN|LV_STATE_DEFAULT": {
                 "part": "LV_PART_MAIN",
                 "state": "LV_STATE_DEFAULT",
-                "bg_color": "#000000",
+                "bg_color": "#101416",
                 "border_color": "#2f3539",
                 "border_opa": 255,
                 "border_width": 3
@@ -828,7 +828,7 @@
               "LV_PART_MAIN|LV_STATE_DEFAULT": {
                 "part": "LV_PART_MAIN",
                 "state": "LV_STATE_DEFAULT",
-                "bg_color": "#000000",
+                "bg_color": "#101416",
                 "border_color": "#2f3539",
                 "border_opa": 255,
                 "border_width": 3
@@ -899,7 +899,7 @@
               "LV_PART_MAIN|LV_STATE_DEFAULT": {
                 "part": "LV_PART_MAIN",
                 "state": "LV_STATE_DEFAULT",
-                "bg_color": "#000000",
+                "bg_color": "#101416",
                 "border_color": "#2f3539",
                 "border_width": 3,
                 "border_opa": 255
@@ -970,7 +970,7 @@
               "LV_PART_MAIN|LV_STATE_DEFAULT": {
                 "part": "LV_PART_MAIN",
                 "state": "LV_STATE_DEFAULT",
-                "bg_color": "#000000",
+                "bg_color": "#101416",
                 "border_color": "#2f3539",
                 "border_opa": 255,
                 "border_width": 3
@@ -981,13 +981,13 @@
                 "id": "image_MRH12QRYFSIR",
                 "type": "image",
                 "name": "image_bt_home",
-                "width": 70,
+                "width": 50,
                 "width_unit": "px",
-                "height": 30,
+                "height": 40,
                 "height_unit": "px",
-                "x": 551,
+                "x": 574,
                 "x_unit": "px",
-                "y": -1,
+                "y": -6,
                 "y_unit": "px",
                 "align": "LV_ALIGN_TOP_LEFT",
                 "style": {
@@ -1019,7 +1019,7 @@
               "LV_PART_MAIN|LV_STATE_DEFAULT": {
                 "part": "LV_PART_MAIN",
                 "state": "LV_STATE_DEFAULT",
-                "bg_color": "#000000",
+                "bg_color": "#101416",
                 "border_color": "#2f3539",
                 "border_width": 3,
                 "border_opa": 255
@@ -1030,13 +1030,13 @@
                 "id": "image_MRH101DB3LW2",
                 "type": "image",
                 "name": "image_bt_voltar",
-                "width": 62,
+                "width": 50,
                 "width_unit": "px",
-                "height": 42,
+                "height": 40,
                 "height_unit": "px",
-                "x": -4,
+                "x": 2,
                 "x_unit": "px",
-                "y": -7,
+                "y": -6,
                 "y_unit": "px",
                 "align": "LV_ALIGN_TOP_LEFT",
                 "style": {
@@ -1068,7 +1068,7 @@
               "LV_PART_MAIN|LV_STATE_DEFAULT": {
                 "part": "LV_PART_MAIN",
                 "state": "LV_STATE_DEFAULT",
-                "bg_color": "#2196f3",
+                "bg_color": "#101416",
                 "bg_opa": 0,
                 "border_width": 3,
                 "border_color": "#2f3539"
@@ -1092,10 +1092,9 @@
                   "LV_PART_MAIN|LV_STATE_DEFAULT": {
                     "part": "LV_PART_MAIN",
                     "state": "LV_STATE_DEFAULT",
-                    "bg_color": "#000000",
+                    "bg_color": "#101416",
                     "border_width": 3,
                     "border_color": "#2f3539",
-                    "bg_opa": 0,
                     "border_opa": 255
                   }
                 },
@@ -1164,7 +1163,7 @@
                   "LV_PART_MAIN|LV_STATE_DEFAULT": {
                     "part": "LV_PART_MAIN",
                     "state": "LV_STATE_DEFAULT",
-                    "bg_color": "#000000",
+                    "bg_color": "#101416",
                     "border_width": 3,
                     "border_color": "#2f3539",
                     "border_opa": 255
@@ -1219,6 +1218,678 @@
                     "src": "resources/image/wifi.png"
                   }
                 ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "screen_ynrdwtg",
+        "name": "screen_bicos_step_one",
+        "type": "screen",
+        "style": {
+          "LV_PART_MAIN|LV_STATE_DEFAULT": {
+            "part": "LV_PART_MAIN",
+            "state": "LV_STATE_DEFAULT",
+            "bg_color": "#000000"
+          }
+        },
+        "children": [
+          {
+            "id": "button_MRJ9UEWP33PN",
+            "type": "button",
+            "name": "button_top",
+            "width": 780,
+            "width_unit": "px",
+            "height": 60,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 10,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJ9WP90Z77C",
+                "type": "label",
+                "name": "label_bt_top",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 155,
+                "x_unit": "px",
+                "y": -2,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 30
+                  }
+                },
+                "text": "SELECIONE O TIPO DE BICO"
+              }
+            ],
+            "add_flag": [],
+            "remove_flag": [
+              "LV_OBJ_FLAG_CLICKABLE",
+              "LV_OBJ_FLAG_CLICK_FOCUSABLE"
+            ]
+          },
+          {
+            "id": "button_MRJ8EMDNCELM",
+            "type": "button",
+            "name": "button_bico_gdi",
+            "width": 385,
+            "width_unit": "px",
+            "height": 320,
+            "height_unit": "px",
+            "x": 405,
+            "x_unit": "px",
+            "y": 84,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2f3539",
+                "border_width": 3,
+                "border_opa": 255
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJ8N7J0R9JG",
+                "type": "label",
+                "name": "label_bt_bico_gdi",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 41,
+                "x_unit": "px",
+                "y": 216,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 30
+                  }
+                },
+                "text": "75V - Bico Injetor\n          GDI"
+              },
+              {
+                "id": "image_MRJ8JGK4AZK7",
+                "type": "image",
+                "name": "image_bt_gdi",
+                "width": 100,
+                "width_unit": "px",
+                "height": 100,
+                "height_unit": "px",
+                "x": 119,
+                "x_unit": "px",
+                "y": 60,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/motocicleta.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJ8BXJFXG2O",
+            "type": "button",
+            "name": "button_bico_12v_comum",
+            "width": 385,
+            "width_unit": "px",
+            "height": 320,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 84,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2f3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJ8KBM4H2OQ",
+                "type": "label",
+                "name": "label_bt_bico_comum",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 40,
+                "x_unit": "px",
+                "y": 216,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 30
+                  }
+                },
+                "text": "12V - Bico Injetor \n         Comum"
+              },
+              {
+                "id": "image_MRJ8IOQ5GCAQ",
+                "type": "image",
+                "name": "image_bt_bico_comum",
+                "width": 100,
+                "width_unit": "px",
+                "height": 100,
+                "height_unit": "px",
+                "x": 119,
+                "x_unit": "px",
+                "y": 60,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/motocicleta.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJ4L7VIUFQM",
+            "type": "button",
+            "name": "button_nothing",
+            "width": 548,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 125,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "border_color": "#2f3539",
+                "border_opa": 255,
+                "border_width": 3,
+                "bg_color": "#101416"
+              }
+            },
+            "add_flag": [],
+            "remove_flag": [
+              "LV_OBJ_FLAG_CLICKABLE",
+              "LV_OBJ_FLAG_CLICK_FOCUSABLE"
+            ]
+          },
+          {
+            "id": "button_MRJ4L1MQ3U8H",
+            "type": "button",
+            "name": "button_home",
+            "width": 100,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 690,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "border_color": "#2f3539",
+                "border_opa": 255,
+                "border_width": 3,
+                "bg_color": "#101416"
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJ8A0IIJQIK",
+                "type": "image",
+                "name": "image_bt_home",
+                "width": 50,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 2,
+                "x_unit": "px",
+                "y": -9,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/home.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJ4KVL7UD0V",
+            "type": "button",
+            "name": "button_voltar",
+            "width": 100,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "border_color": "#2f3539",
+                "border_opa": 255,
+                "border_width": 3,
+                "bg_color": "#101416"
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJ4PPPQMUJ4",
+                "type": "image",
+                "name": "image_bt_voltar",
+                "width": 50,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 2,
+                "x_unit": "px",
+                "y": -9,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/seta_esquerda.png"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "screen_lb63ls8",
+        "name": "screen_bicos_step_two",
+        "type": "screen",
+        "style": {
+          "LV_PART_MAIN|LV_STATE_DEFAULT": {
+            "part": "LV_PART_MAIN",
+            "state": "LV_STATE_DEFAULT",
+            "bg_color": "#000000"
+          }
+        },
+        "children": [
+          {
+            "id": "button_MRJBLN4RWQC3",
+            "type": "button",
+            "name": "button_top",
+            "width": 780,
+            "width_unit": "px",
+            "height": 60,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 10,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "add_flag": [],
+            "remove_flag": [
+              "LV_OBJ_FLAG_CLICKABLE",
+              "LV_OBJ_FLAG_CLICK_FOCUSABLE"
+            ],
+            "children": [
+              {
+                "id": "label_MRJBTODMFE7N",
+                "type": "label",
+                "name": "label_bt_top",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 143,
+                "x_unit": "px",
+                "y": -2,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 30
+                  }
+                },
+                "text": "SELECIONE O TIPO DE TESTE"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJBJ9O11672",
+            "type": "button",
+            "name": "button_modo_automatico",
+            "width": 385,
+            "width_unit": "px",
+            "height": 320,
+            "height_unit": "px",
+            "x": 405,
+            "x_unit": "px",
+            "y": 80,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJBVXBX9ESM",
+                "type": "label",
+                "name": "label_bt_modo_automatico",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 62,
+                "x_unit": "px",
+                "y": 191,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 30
+                  }
+                },
+                "text": "AUTOMÁTICO"
+              },
+              {
+                "id": "image_MRJBSOBUHPZB",
+                "type": "image",
+                "name": "image_bt_modo_automatico",
+                "width": 100,
+                "width_unit": "px",
+                "height": 100,
+                "height_unit": "px",
+                "x": 119,
+                "x_unit": "px",
+                "y": 46,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/reproducao.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJBID23M45S",
+            "type": "button",
+            "name": "button_modo_manual",
+            "width": 385,
+            "width_unit": "px",
+            "height": 320,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 80,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "label_MRJBUN519JHM",
+                "type": "label",
+                "name": "label_bt_modo_manual",
+                "width": 0,
+                "width_unit": "content",
+                "height": 0,
+                "height_unit": "content",
+                "x": 100,
+                "x_unit": "px",
+                "y": 191,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "text_size": 30
+                  }
+                },
+                "text": "MANUAL"
+              },
+              {
+                "id": "image_MRJBR6SMS6WK",
+                "type": "image",
+                "name": "image_bt_modo_manual",
+                "width": 100,
+                "width_unit": "px",
+                "height": 100,
+                "height_unit": "px",
+                "x": 111,
+                "x_unit": "px",
+                "y": 46,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#f2f2f2",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/manual.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJBCM9ENLJS",
+            "type": "button",
+            "name": "button_nothing",
+            "width": 550,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 125,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "add_flag": [],
+            "remove_flag": [
+              "LV_OBJ_FLAG_CLICKABLE",
+              "LV_OBJ_FLAG_CLICK_FOCUSABLE"
+            ]
+          },
+          {
+            "id": "button_MRJBC5OXOQAC",
+            "type": "button",
+            "name": "button_home",
+            "width": 100,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 690,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJBGSYCBHKC",
+                "type": "image",
+                "name": "image_bt_home",
+                "width": 50,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 2,
+                "x_unit": "px",
+                "y": -9,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/home.png"
+              }
+            ]
+          },
+          {
+            "id": "button_MRJBBP03AENA",
+            "type": "button",
+            "name": "button_voltar",
+            "width": 100,
+            "width_unit": "px",
+            "height": 50,
+            "height_unit": "px",
+            "x": 10,
+            "x_unit": "px",
+            "y": 420,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "bg_color": "#101416",
+                "border_color": "#2F3539",
+                "border_opa": 255,
+                "border_width": 3
+              }
+            },
+            "children": [
+              {
+                "id": "image_MRJBFXM9W5MA",
+                "type": "image",
+                "name": "image_bt_voltar",
+                "width": 50,
+                "width_unit": "px",
+                "height": 40,
+                "height_unit": "px",
+                "x": 2,
+                "x_unit": "px",
+                "y": -9,
+                "y_unit": "px",
+                "align": "LV_ALIGN_TOP_LEFT",
+                "style": {
+                  "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                    "part": "LV_PART_MAIN",
+                    "state": "LV_STATE_DEFAULT",
+                    "recolor": "#ffffff",
+                    "recolor_opa": 255
+                  }
+                },
+                "src": "resources/image/seta_esquerda.png"
               }
             ]
           }

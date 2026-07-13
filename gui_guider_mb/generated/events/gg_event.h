@@ -17,7 +17,7 @@
  *
  * Tool            : GUI Guider
  * Version         : 2.0.0
- * Generated on    : 11/07/2026
+ * Generated on    : 13/07/2026
  * ------------------------------------------------------------------------------
  */
 
@@ -53,6 +53,8 @@ void gg_event_init_layer_bottom(gg_ui_t * ui);
 void gg_event_init_screen_splash(gg_ui_t * ui);
 void gg_event_init_screen_menu_principal(gg_ui_t * ui);
 void gg_event_init_screen_configuracoes(gg_ui_t * ui);
+void gg_event_init_screen_bicos_step_one(gg_ui_t * ui);
+void gg_event_init_screen_bicos_step_two(gg_ui_t * ui);
 
 #ifdef __cplusplus
 }
