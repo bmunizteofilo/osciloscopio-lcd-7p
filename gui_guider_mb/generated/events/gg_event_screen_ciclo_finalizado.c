@@ -26,7 +26,7 @@
 
 // No event handlers
 
-void gg_event_init_layer_top(gg_ui_t * ui)
+void gg_event_init_screen_ciclo_finalizado(gg_ui_t * ui)
 {
     // No event callbacks
 }

@@ -17,7 +17,7 @@
  *
  * Tool            : GUI Guider
  * Version         : 2.0.0
- * Generated on    : 13/07/2026
+ * Generated on    : 21/07/2026
  * ------------------------------------------------------------------------------
  */
 
@@ -59,6 +59,12 @@ void gg_event_init_screen_bicos_step_config_manual(gg_ui_t * ui);
 void gg_event_init_screen_pronto_pra_iniciar(gg_ui_t * ui);
 void gg_event_init_screen_testes_automaticos(gg_ui_t * ui);
 void gg_event_init_screen_testes_automaticos_2(gg_ui_t * ui);
+void gg_event_init_screen_stand_by(gg_ui_t * ui);
+void gg_event_init_screen_ciclo_finalizado(gg_ui_t * ui);
+void gg_event_init_screen_dados_cliente(gg_ui_t * ui);
+void gg_event_init_screen_relatorio_final(gg_ui_t * ui);
+void gg_event_init_screen_relatorio(gg_ui_t * ui);
+void gg_event_init_screen_diagnostico(gg_ui_t * ui);
 
 #ifdef __cplusplus
 }

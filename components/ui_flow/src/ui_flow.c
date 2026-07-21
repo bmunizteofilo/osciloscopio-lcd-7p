@@ -1,5 +1,7 @@
 #include "ui_flow.h"
 
+#include <stdint.h>
+#include <ctype.h>
 #include <string.h>
 #include <time.h>
 #include "esp_check.h"
@@ -10,9 +12,12 @@
 #include "date_time.h"
 #include "osc.h"
 #include "general_settings.h"
+#include "report_storage.h"
 
 #define UI_FLOW_SPLASH_DURATION_MS 5000U
 #define UI_FLOW_SPLASH_BAR_RADIUS 15
+#define UI_FLOW_STANDBY_TIMEOUT_MS 90000U
+#define UI_FLOW_CYCLE_FINISHED_DELAY_MS 5000U
 
 /** @brief Identificadores dos parâmetros ajustáveis do modo manual. */
 typedef enum {
@@ -29,6 +34,18 @@ typedef enum {
     UI_FLOW_INJECTOR_12V,
     UI_FLOW_INJECTOR_75V_GDI
 } ui_flow_injector_type_t;
+
+/** @brief Campos editáveis dos dados apresentados no fechamento do ciclo. */
+typedef enum {
+    UI_FLOW_CLIENT_NAME,
+    UI_FLOW_CLIENT_DATE,
+    UI_FLOW_CLIENT_PHONE,
+    UI_FLOW_CLIENT_VEHICLE,
+    UI_FLOW_CLIENT_PLATE,
+    UI_FLOW_CLIENT_KM,
+    UI_FLOW_CLIENT_OBSERVATIONS,
+    UI_FLOW_CLIENT_FIELD_COUNT
+} ui_flow_client_field_t;
 
 /** @brief Instância exigida pelo código exportado pelo NXP GUI Guider. */
 gg_ui_t guider_ui;
@@ -56,6 +73,27 @@ typedef struct {
     bluetooth_manager_status_t bluetooth_last_status;
     bool bluetooth_status_valid;
     lv_timer_t *menu_clock_timer;
+    lv_timer_t *cycle_finished_timer;
+    lv_obj_t *client_keyboard;
+    lv_obj_t *client_textarea;
+    lv_obj_t *client_date_popup;
+    lv_obj_t *client_date_calendar;
+    lv_obj_t *report_popup;
+    lv_obj_t *report_search_keyboard;
+    lv_obj_t *report_search_textarea;
+    lv_obj_t *report_search_label;
+    lv_obj_t *client_value_labels[UI_FLOW_CLIENT_FIELD_COUNT];
+    ui_flow_client_field_t client_active_field;
+    lv_calendar_date_t client_selected_date;
+    lv_calendar_date_t client_highlighted_date;
+    char client_values[UI_FLOW_CLIENT_FIELD_COUNT][96];
+    char selected_test_description[REPORT_STORAGE_TEXT_LENGTH];
+    char report_search_text[REPORT_STORAGE_TEXT_LENGTH];
+    char test_start_time[6];
+    char test_end_time[6];
+    report_storage_record_t selected_report;
+    bool selected_report_valid;
+    bool final_report_from_list;
     bool preserve_oscilloscope_screen;
     lv_obj_t *general_panel;
     lv_obj_t *general_popup;
@@ -101,6 +139,18 @@ static void ui_flow_show_bicos_config_manual(void);
 static void ui_flow_show_ready_to_start(void);
 static void ui_flow_show_automatic_tests(void);
 static void ui_flow_show_automatic_tests_second_page(void);
+static void ui_flow_show_standby(void);
+static void ui_flow_show_cycle_finished(void);
+static void ui_flow_show_client_data(void);
+static void ui_flow_show_client_date_calendar(void);
+static void ui_flow_show_final_report(void);
+static void ui_flow_show_reports(void);
+static void ui_flow_show_diagnostic(void);
+static void ui_flow_reports_button_cb(lv_event_t *event);
+static void ui_flow_diagnostic_button_cb(lv_event_t *event);
+static void ui_flow_populate_reports_list(const char *filter, bool *out_has_match);
+static void ui_flow_show_search_empty_popup(void);
+static void ui_flow_cycle_finished_advance_cb(lv_event_t *event);
 static void ui_flow_destroy_wifi_panel(void);
 static void ui_flow_destroy_bluetooth_panel(void);
 static void ui_flow_destroy_general_panel(void);
@@ -108,6 +158,15 @@ static void ui_flow_destroy_about_panel(void);
 static void ui_flow_destroy_maintenance_panel(void);
 static void ui_flow_oscilloscope_menu_cb(void);
 static void ui_flow_show_general_panel(void);
+
+/** @brief Cancela a transição temporária do osciloscópio para o resumo do ciclo. */
+static void ui_flow_stop_cycle_finished_timer(void)
+{
+    if (s_ui_flow.cycle_finished_timer != NULL) {
+        lv_timer_delete(s_ui_flow.cycle_finished_timer);
+        s_ui_flow.cycle_finished_timer = NULL;
+    }
+}
 
 /** @brief Fecha o diálogo de ajuste de um parâmetro do modo manual. */
 static void ui_flow_close_manual_popup(void)
@@ -303,6 +362,38 @@ static void ui_flow_ready_populate_info(void)
     ui_flow_ready_add_info_row(container, "Tempo de Pausa", value);
     ui_flow_manual_format_value(UI_FLOW_MANUAL_TEMPERATURE, s_ui_flow.manual_temperature, value, sizeof(value));
     ui_flow_ready_add_info_row(container, "Temperatura", value);
+}
+
+/** @brief Preenche o resumo temporário exibido após a finalização do ciclo. */
+static void ui_flow_cycle_finished_populate_info(void)
+{
+    lv_obj_t *container = guider_ui.screen_ciclo_finalizado.container_infos;
+    if (container == NULL) {
+        return;
+    }
+    lv_obj_clean(container);
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_scroll_dir(container, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(container, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_pad_left(container, 14, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(container, 14, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(container, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(container, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(container, 0, LV_PART_MAIN);
+    ui_flow_ready_add_info_row(container, "Tempo Total", "00:05");
+    ui_flow_ready_add_info_row(container, "Ciclos Executados", "120");
+    ui_flow_ready_add_info_row(container, "Pressao Media", "85.4 bar");
+    ui_flow_ready_add_info_row(container, "Temperatura Media", "42 C");
+}
+
+/** @brief Finaliza a demonstração temporária e abre o resumo do ciclo. */
+static void ui_flow_cycle_finished_timer_cb(lv_timer_t *timer)
+{
+    lv_timer_delete(timer);
+    s_ui_flow.cycle_finished_timer = NULL;
+    date_time_format_time(s_ui_flow.test_end_time, sizeof(s_ui_flow.test_end_time));
+    ui_flow_show_cycle_finished();
 }
 
 /** @brief Atualiza a prévia exibida ao mover o slider de configuração manual. */
@@ -718,6 +809,13 @@ static void ui_flow_maintenance_button_cb(lv_event_t *event)
     ui_flow_show_maintenance_panel();
 }
 
+/** @brief Restaura o menu principal ao detectar um toque durante o standby. */
+static void ui_flow_standby_activity_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_main_menu();
+}
+
 /** @brief Atualiza os indicadores de conectividade apresentados no menu principal. */
 static void ui_flow_update_menu_connectivity_labels(void)
 {
@@ -755,6 +853,9 @@ static void ui_flow_menu_clock_update_cb(lv_timer_t *timer)
         lv_label_set_text(guider_ui.screen_menu_principal.label_menu_principal_data, date_text);
     }
     ui_flow_update_menu_connectivity_labels();
+    if (lv_display_get_inactive_time(NULL) >= UI_FLOW_STANDBY_TIMEOUT_MS) {
+        ui_flow_show_standby();
+    }
 }
 
 /** @brief Fecha o teclado local de credenciais Wi-Fi. */
@@ -844,6 +945,24 @@ static void ui_flow_wifi_connect_cb(lv_event_t *event)
 }
 
 /**
+ * @brief Alterna a exibição da senha digitada no teclado de credenciais Wi-Fi.
+ *
+ * @param[in] event Evento de toque do botão Mostrar ou Esconder.
+ */
+static void ui_flow_wifi_password_visibility_cb(lv_event_t *event)
+{
+    if (s_ui_flow.wifi_password == NULL) {
+        return;
+    }
+    const bool was_hidden = lv_textarea_get_password_mode(s_ui_flow.wifi_password);
+    lv_textarea_set_password_mode(s_ui_flow.wifi_password, !was_hidden);
+    lv_obj_t *label = lv_event_get_user_data(event);
+    if (label != NULL) {
+        lv_label_set_text(label, was_hidden ? "Esconder" : "Mostrar");
+    }
+}
+
+/**
  * @brief Cria teclado de senha na metade inferior da tela.
  *
  * @param[in] ssid SSID selecionado na lista de redes.
@@ -868,12 +987,495 @@ static void ui_flow_show_wifi_keyboard(const char *ssid)
     lv_obj_set_pos(s_ui_flow.wifi_password, 16, 27);
     lv_textarea_set_password_mode(s_ui_flow.wifi_password, true);
     lv_textarea_set_one_line(s_ui_flow.wifi_password, true);
+    lv_obj_t *visibility_button = lv_button_create(s_ui_flow.wifi_keyboard);
+    lv_obj_set_size(visibility_button, 120, 42);
+    lv_obj_set_pos(visibility_button, 530, 27);
+    lv_obj_set_style_bg_color(visibility_button, lv_color_hex(0x303638), LV_PART_MAIN);
+    lv_obj_t *visibility_label = lv_label_create(visibility_button);
+    lv_label_set_text(visibility_label, "Mostrar");
+    lv_obj_set_style_text_color(visibility_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(visibility_label);
+    lv_obj_add_event_cb(visibility_button, ui_flow_wifi_password_visibility_cb,
+                        LV_EVENT_CLICKED, visibility_label);
     lv_obj_t *keyboard = lv_keyboard_create(s_ui_flow.wifi_keyboard);
     lv_obj_set_size(keyboard, 760, 220);
     lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, -10);
     lv_keyboard_set_textarea(keyboard, s_ui_flow.wifi_password);
     lv_obj_add_event_cb(keyboard, ui_flow_wifi_connect_cb, LV_EVENT_READY, NULL);
     lv_obj_add_event_cb(keyboard, ui_flow_wifi_keyboard_cancel_cb, LV_EVENT_CANCEL, NULL);
+}
+
+/** @brief Fecha o teclado de edição dos dados do cliente. */
+static void ui_flow_close_client_keyboard(void)
+{
+    if (s_ui_flow.client_keyboard != NULL) {
+        lv_obj_delete(s_ui_flow.client_keyboard);
+        s_ui_flow.client_keyboard = NULL;
+        s_ui_flow.client_textarea = NULL;
+    }
+}
+
+/** @brief Atualiza na tela o valor salvo para um campo de dados do cliente. */
+static void ui_flow_update_client_field(ui_flow_client_field_t field)
+{
+    if (field < UI_FLOW_CLIENT_FIELD_COUNT && s_ui_flow.client_value_labels[field] != NULL) {
+        lv_label_set_text(s_ui_flow.client_value_labels[field], s_ui_flow.client_values[field]);
+    }
+}
+
+/** @brief Fecha o calendário usado para escolher a data do atendimento. */
+static void ui_flow_close_client_date_calendar(void)
+{
+    if (s_ui_flow.client_date_popup != NULL) {
+        lv_obj_delete(s_ui_flow.client_date_popup);
+        s_ui_flow.client_date_popup = NULL;
+        s_ui_flow.client_date_calendar = NULL;
+    }
+}
+
+/**
+ * @brief Registra a data pressionada no calendário de dados do cliente.
+ *
+ * @param[in] event Evento de alteração do calendário LVGL.
+ */
+static void ui_flow_client_date_calendar_cb(lv_event_t *event)
+{
+    lv_calendar_date_t date = {0};
+    lv_obj_t *calendar = lv_event_get_current_target(event);
+    if (lv_event_get_target_obj(event) != lv_calendar_get_btnmatrix(calendar)) {
+        return;
+    }
+    if (lv_calendar_get_pressed_date(calendar, &date) == LV_RESULT_OK) {
+        s_ui_flow.client_selected_date = date;
+        s_ui_flow.client_highlighted_date = date;
+        lv_calendar_set_highlighted_dates(calendar, &s_ui_flow.client_highlighted_date, 1);
+    }
+}
+
+/**
+ * @brief Confirma a data escolhida e atualiza o container correspondente.
+ *
+ * @param[in] event Evento de toque do botão Aplicar.
+ */
+static void ui_flow_client_date_apply_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_ui_flow.client_selected_date.year == 0 && s_ui_flow.client_date_calendar != NULL) {
+        s_ui_flow.client_selected_date = *lv_calendar_get_showed_date(s_ui_flow.client_date_calendar);
+    }
+    if (s_ui_flow.client_selected_date.year != 0) {
+        lv_snprintf(s_ui_flow.client_values[UI_FLOW_CLIENT_DATE],
+                    sizeof(s_ui_flow.client_values[UI_FLOW_CLIENT_DATE]), "%02u/%02u/%04u",
+                    (unsigned)s_ui_flow.client_selected_date.day,
+                    (unsigned)s_ui_flow.client_selected_date.month,
+                    (unsigned)s_ui_flow.client_selected_date.year);
+        ui_flow_update_client_field(UI_FLOW_CLIENT_DATE);
+    }
+    ui_flow_close_client_date_calendar();
+}
+
+/**
+ * @brief Fecha o calendário sem alterar a data do atendimento.
+ *
+ * @param[in] event Evento de toque do botão Cancelar.
+ */
+static void ui_flow_client_date_cancel_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_client_date_calendar();
+}
+
+/** @brief Exibe um calendário local para escolher somente a data do atendimento. */
+static void ui_flow_show_client_date_calendar(void)
+{
+    const time_t now = time(NULL);
+    struct tm local_time = {0};
+    localtime_r(&now, &local_time);
+    if (s_ui_flow.client_selected_date.year == 0) {
+        s_ui_flow.client_selected_date = (lv_calendar_date_t){
+            .year = (uint16_t)(local_time.tm_year + 1900),
+            .month = (uint8_t)(local_time.tm_mon + 1),
+            .day = (uint8_t)local_time.tm_mday};
+    }
+    s_ui_flow.client_highlighted_date = s_ui_flow.client_selected_date;
+    ui_flow_close_client_date_calendar();
+    s_ui_flow.client_date_popup = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.client_date_popup, 360, 350);
+    lv_obj_center(s_ui_flow.client_date_popup);
+    lv_obj_set_style_bg_color(s_ui_flow.client_date_popup, lv_color_hex(0x101416), LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.client_date_popup, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.client_date_popup, 2, LV_PART_MAIN);
+    lv_obj_t *title = lv_label_create(s_ui_flow.client_date_popup);
+    lv_label_set_text(title, "Data");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_pos(title, 16, 12);
+    s_ui_flow.client_date_calendar = lv_calendar_create(s_ui_flow.client_date_popup);
+    lv_obj_set_size(s_ui_flow.client_date_calendar, 330, 245);
+    lv_obj_set_pos(s_ui_flow.client_date_calendar, 15, 38);
+    lv_calendar_set_today_date(s_ui_flow.client_date_calendar, (uint16_t)(local_time.tm_year + 1900),
+                               (uint8_t)(local_time.tm_mon + 1), (uint8_t)local_time.tm_mday);
+    lv_calendar_set_month_shown(s_ui_flow.client_date_calendar, s_ui_flow.client_selected_date.year,
+                                s_ui_flow.client_selected_date.month);
+    lv_calendar_set_highlighted_dates(s_ui_flow.client_date_calendar,
+                                      &s_ui_flow.client_highlighted_date, 1);
+    lv_obj_t *header = lv_calendar_add_header_dropdown(s_ui_flow.client_date_calendar);
+    lv_calendar_header_dropdown_set_year_list(s_ui_flow.client_date_calendar, s_ui_flow_calendar_years);
+    lv_obj_send_event(header, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(s_ui_flow.client_date_calendar, ui_flow_client_date_calendar_cb,
+                        LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_t *cancel = lv_button_create(s_ui_flow.client_date_popup);
+    lv_obj_set_size(cancel, 120, 40);
+    lv_obj_set_pos(cancel, 35, 298);
+    lv_obj_set_style_bg_color(cancel, lv_color_hex(0x8b1e1e), LV_PART_MAIN);
+    lv_obj_add_event_cb(cancel, ui_flow_client_date_cancel_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *cancel_label = lv_label_create(cancel);
+    lv_label_set_text(cancel_label, "Cancelar");
+    lv_obj_set_style_text_color(cancel_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(cancel_label);
+    lv_obj_t *apply = lv_button_create(s_ui_flow.client_date_popup);
+    lv_obj_set_size(apply, 120, 40);
+    lv_obj_set_pos(apply, 205, 298);
+    lv_obj_set_style_bg_color(apply, lv_color_hex(0x09572e), LV_PART_MAIN);
+    lv_obj_add_event_cb(apply, ui_flow_client_date_apply_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *apply_label = lv_label_create(apply);
+    lv_label_set_text(apply_label, "Aplicar");
+    lv_obj_set_style_text_color(apply_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(apply_label);
+}
+
+/** @brief Fecha o popup de resultado ou confirmação do relatório. */
+static void ui_flow_close_report_popup(void)
+{
+    if (s_ui_flow.report_popup != NULL) {
+        lv_obj_delete(s_ui_flow.report_popup);
+        s_ui_flow.report_popup = NULL;
+    }
+}
+
+/**
+ * @brief Fecha o status da gravação e abre o relatório quando o salvamento teve sucesso.
+ *
+ * @param[in] event Evento de toque do botão OK.
+ */
+static void ui_flow_report_status_ok_cb(lv_event_t *event)
+{
+    const bool saved = (bool)(uintptr_t)lv_event_get_user_data(event);
+    ui_flow_close_report_popup();
+    if (saved) {
+        ui_flow_show_final_report();
+    }
+}
+
+/**
+ * @brief Mostra o resultado do salvamento do relatório na flash.
+ *
+ * @param[in] saved Indica se o registro foi persistido com sucesso.
+ */
+static void ui_flow_show_report_status_popup(bool saved)
+{
+    ui_flow_close_report_popup();
+    s_ui_flow.report_popup = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.report_popup, 380, 155);
+    lv_obj_center(s_ui_flow.report_popup);
+    lv_obj_set_style_bg_color(s_ui_flow.report_popup, lv_color_hex(0x101416), LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.report_popup,
+                                  lv_color_hex(saved ? 0x2cb359 : 0xc62828), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.report_popup, 2, LV_PART_MAIN);
+    lv_obj_t *message = lv_label_create(s_ui_flow.report_popup);
+    lv_label_set_text(message, saved ? "Relatorio salvo com sucesso." : "Falha ao salvar relatorio.");
+    lv_obj_set_style_text_color(message, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(message, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_t *ok = lv_button_create(s_ui_flow.report_popup);
+    lv_obj_set_size(ok, 110, 38);
+    lv_obj_align(ok, LV_ALIGN_BOTTOM_MID, 0, -12);
+    lv_obj_set_style_bg_color(ok, lv_color_hex(saved ? 0x09572e : 0x8b1e1e), LV_PART_MAIN);
+    lv_obj_add_event_cb(ok, ui_flow_report_status_ok_cb, LV_EVENT_CLICKED,
+                        (void *)(uintptr_t)saved);
+    lv_obj_t *label = lv_label_create(ok);
+    lv_label_set_text(label, "OK");
+    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(label);
+}
+
+/** @brief Verifica se o nome obrigatório do cliente contém ao menos um caractere visível. */
+static bool ui_flow_client_name_is_empty(void)
+{
+    const char *name = s_ui_flow.client_values[UI_FLOW_CLIENT_NAME];
+    while (*name != '\0') {
+        if (!isspace((unsigned char)*name)) {
+            return false;
+        }
+        name++;
+    }
+    return true;
+}
+
+/**
+ * @brief Fecha o aviso de preenchimento obrigatório do nome do cliente.
+ *
+ * @param[in] event Evento de toque do botão OK.
+ */
+static void ui_flow_required_name_ok_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_report_popup();
+}
+
+/** @brief Informa que o relatório exige o nome do cliente antes de ser salvo. */
+static void ui_flow_show_required_name_popup(void)
+{
+    ui_flow_close_report_popup();
+    s_ui_flow.report_popup = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.report_popup, 390, 155);
+    lv_obj_center(s_ui_flow.report_popup);
+    lv_obj_set_style_bg_color(s_ui_flow.report_popup, lv_color_hex(0x101416), LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.report_popup, lv_color_hex(0xc62828), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.report_popup, 2, LV_PART_MAIN);
+    lv_obj_t *message = lv_label_create(s_ui_flow.report_popup);
+    lv_label_set_text(message, "Informe o Nome do Cliente.");
+    lv_obj_set_style_text_color(message, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(message, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_t *ok = lv_button_create(s_ui_flow.report_popup);
+    lv_obj_set_size(ok, 100, 36);
+    lv_obj_align(ok, LV_ALIGN_BOTTOM_MID, 0, -12);
+    lv_obj_add_event_cb(ok, ui_flow_required_name_ok_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label = lv_label_create(ok);
+    lv_label_set_text(label, "OK");
+    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(label);
+}
+
+/**
+ * @brief Salva os dados atuais do ciclo e do cliente no armazenamento de relatórios.
+ *
+ * @param[in] event Evento de toque do botão Salvar e Gerar Relatorio.
+ */
+static void ui_flow_save_client_report_cb(lv_event_t *event)
+{
+    (void)event;
+    if (ui_flow_client_name_is_empty()) {
+        ui_flow_show_required_name_popup();
+        return;
+    }
+    report_storage_record_t report = {0};
+    if (s_ui_flow.client_values[UI_FLOW_CLIENT_DATE][0] == '\0') {
+        date_time_format_date(s_ui_flow.client_values[UI_FLOW_CLIENT_DATE],
+                              sizeof(s_ui_flow.client_values[UI_FLOW_CLIENT_DATE]));
+        ui_flow_update_client_field(UI_FLOW_CLIENT_DATE);
+    }
+    strncpy(report.injector_type, s_ui_flow.injector_type == UI_FLOW_INJECTOR_75V_GDI ?
+            "Bico GDI" : "12V Bico Comum", sizeof(report.injector_type) - 1U);
+    strncpy(report.test_description, s_ui_flow.selected_test_description,
+            sizeof(report.test_description) - 1U);
+    strncpy(report.date, s_ui_flow.client_values[UI_FLOW_CLIENT_DATE], sizeof(report.date) - 1U);
+    strncpy(report.start_time, s_ui_flow.test_start_time, sizeof(report.start_time) - 1U);
+    strncpy(report.end_time, s_ui_flow.test_end_time, sizeof(report.end_time) - 1U);
+    strncpy(report.customer_name, s_ui_flow.client_values[UI_FLOW_CLIENT_NAME], sizeof(report.customer_name) - 1U);
+    strncpy(report.phone, s_ui_flow.client_values[UI_FLOW_CLIENT_PHONE], sizeof(report.phone) - 1U);
+    strncpy(report.vehicle, s_ui_flow.client_values[UI_FLOW_CLIENT_VEHICLE], sizeof(report.vehicle) - 1U);
+    strncpy(report.plate, s_ui_flow.client_values[UI_FLOW_CLIENT_PLATE], sizeof(report.plate) - 1U);
+    strncpy(report.mileage, s_ui_flow.client_values[UI_FLOW_CLIENT_KM], sizeof(report.mileage) - 1U);
+    strncpy(report.observations, s_ui_flow.client_values[UI_FLOW_CLIENT_OBSERVATIONS], sizeof(report.observations) - 1U);
+    report.pressure_bar = (uint16_t)s_ui_flow.manual_pressure;
+    report.pulse_ms = (uint16_t)s_ui_flow.manual_pulse;
+    report.rpm = (uint32_t)s_ui_flow.manual_rpm;
+    report.cycles_executed = (uint32_t)s_ui_flow.manual_cycles;
+    report.total_seconds = 5;
+    uint32_t sequence = 0;
+    const bool saved = report_storage_save(&report, &sequence) == ESP_OK;
+    if (saved) {
+        report.sequence = sequence;
+        s_ui_flow.selected_report = report;
+        s_ui_flow.selected_report_valid = true;
+        s_ui_flow.final_report_from_list = false;
+    }
+    ui_flow_show_report_status_popup(saved);
+}
+
+/**
+ * @brief Confirma o cancelamento do relatório e retorna ao menu principal.
+ *
+ * @param[in] event Evento de toque do botão SIM.
+ */
+static void ui_flow_cancel_report_confirm_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_report_popup();
+    ui_flow_show_main_menu();
+}
+
+/**
+ * @brief Fecha a confirmação de cancelamento e mantém os dados em edição.
+ *
+ * @param[in] event Evento de toque do botão CANCELAR.
+ */
+static void ui_flow_cancel_report_abort_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_report_popup();
+}
+
+/**
+ * @brief Solicita confirmação antes de descartar os dados do relatório atual.
+ *
+ * @param[in] event Evento de toque do botão Cancelar.
+ */
+static void ui_flow_cancel_report_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_report_popup();
+    s_ui_flow.report_popup = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.report_popup, 400, 175);
+    lv_obj_center(s_ui_flow.report_popup);
+    lv_obj_set_style_bg_color(s_ui_flow.report_popup, lv_color_hex(0x101416), LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.report_popup, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.report_popup, 2, LV_PART_MAIN);
+    lv_obj_t *message = lv_label_create(s_ui_flow.report_popup);
+    lv_label_set_text(message, "Deseja cancelar o relatorio?");
+    lv_obj_set_style_text_color(message, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(message, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_t *yes = lv_button_create(s_ui_flow.report_popup);
+    lv_obj_set_size(yes, 120, 40);
+    lv_obj_set_pos(yes, 55, 112);
+    lv_obj_set_style_bg_color(yes, lv_color_hex(0x8b1e1e), LV_PART_MAIN);
+    lv_obj_add_event_cb(yes, ui_flow_cancel_report_confirm_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *yes_label = lv_label_create(yes);
+    lv_label_set_text(yes_label, "SIM");
+    lv_obj_set_style_text_color(yes_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(yes_label);
+    lv_obj_t *abort = lv_button_create(s_ui_flow.report_popup);
+    lv_obj_set_size(abort, 120, 40);
+    lv_obj_set_pos(abort, 225, 112);
+    lv_obj_set_style_bg_color(abort, lv_color_hex(0x303638), LV_PART_MAIN);
+    lv_obj_add_event_cb(abort, ui_flow_cancel_report_abort_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *abort_label = lv_label_create(abort);
+    lv_label_set_text(abort_label, "CANCELAR");
+    lv_obj_set_style_text_color(abort_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(abort_label);
+}
+
+/**
+ * @brief Confirma o texto digitado para o campo de dados do cliente ativo.
+ *
+ * @param[in] event Evento de confirmação do teclado LVGL.
+ */
+static void ui_flow_client_keyboard_ready_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_ui_flow.client_textarea != NULL && s_ui_flow.client_active_field < UI_FLOW_CLIENT_FIELD_COUNT) {
+        strncpy(s_ui_flow.client_values[s_ui_flow.client_active_field],
+                lv_textarea_get_text(s_ui_flow.client_textarea),
+                sizeof(s_ui_flow.client_values[s_ui_flow.client_active_field]) - 1U);
+        s_ui_flow.client_values[s_ui_flow.client_active_field]
+            [sizeof(s_ui_flow.client_values[s_ui_flow.client_active_field]) - 1U] = '\0';
+        ui_flow_update_client_field(s_ui_flow.client_active_field);
+    }
+    ui_flow_close_client_keyboard();
+}
+
+/**
+ * @brief Cancela a edição atual dos dados do cliente sem alterar o valor salvo.
+ *
+ * @param[in] event Evento de cancelamento do teclado LVGL.
+ */
+static void ui_flow_client_keyboard_cancel_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_client_keyboard();
+}
+
+/**
+ * @brief Abre o teclado para editar um dos campos de dados do cliente.
+ *
+ * @param[in] field Campo selecionado pelo usuário.
+ */
+static void ui_flow_show_client_keyboard(ui_flow_client_field_t field)
+{
+    static const char *const field_titles[UI_FLOW_CLIENT_FIELD_COUNT] = {
+        "Nome do Cliente", "Data", "Telefone", "Veiculo", "Placa", "Km", "Observacoes"
+    };
+    if (field >= UI_FLOW_CLIENT_FIELD_COUNT) {
+        return;
+    }
+    ui_flow_close_client_keyboard();
+    s_ui_flow.client_active_field = field;
+    s_ui_flow.client_keyboard = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.client_keyboard, 800, 350);
+    lv_obj_set_pos(s_ui_flow.client_keyboard, 0, 130);
+    lv_obj_set_style_bg_color(s_ui_flow.client_keyboard, lv_color_hex(0x111111), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.client_keyboard, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.client_keyboard, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_t *title = lv_label_create(s_ui_flow.client_keyboard);
+    lv_label_set_text(title, field_titles[field]);
+    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_pos(title, 16, 5);
+    s_ui_flow.client_textarea = lv_textarea_create(s_ui_flow.client_keyboard);
+    lv_obj_set_size(s_ui_flow.client_textarea, 500, 42);
+    lv_obj_set_pos(s_ui_flow.client_textarea, 16, 27);
+    lv_textarea_set_one_line(s_ui_flow.client_textarea, true);
+    lv_textarea_set_text(s_ui_flow.client_textarea, s_ui_flow.client_values[field]);
+    lv_obj_t *keyboard = lv_keyboard_create(s_ui_flow.client_keyboard);
+    lv_obj_set_size(keyboard, 760, 220);
+    lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, -10);
+    if (field == UI_FLOW_CLIENT_PHONE || field == UI_FLOW_CLIENT_KM) {
+        lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_NUMBER);
+    }
+    lv_keyboard_set_textarea(keyboard, s_ui_flow.client_textarea);
+    lv_obj_add_event_cb(keyboard, ui_flow_client_keyboard_ready_cb, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(keyboard, ui_flow_client_keyboard_cancel_cb, LV_EVENT_CANCEL, NULL);
+}
+
+/**
+ * @brief Abre o teclado correspondente ao container de dados tocado.
+ *
+ * @param[in] event Evento de toque do container.
+ */
+static void ui_flow_client_field_click_cb(lv_event_t *event)
+{
+    const ui_flow_client_field_t field = (ui_flow_client_field_t)(uintptr_t)lv_event_get_user_data(event);
+    if (field == UI_FLOW_CLIENT_DATE) {
+        ui_flow_show_client_date_calendar();
+        return;
+    }
+    ui_flow_show_client_keyboard(field);
+}
+
+/**
+ * @brief Cria os textos fixo e editável de um container de dados do cliente.
+ *
+ * @param[in] container Container exportado pelo GUI Guider.
+ * @param[in] title Texto fixo alinhado à esquerda.
+ * @param[in] field Campo que será editado ao tocar no container.
+ */
+static void ui_flow_setup_client_field(lv_obj_t *container, const char *title, ui_flow_client_field_t field)
+{
+    if (container == NULL || field >= UI_FLOW_CLIENT_FIELD_COUNT) {
+        return;
+    }
+    lv_obj_set_style_pad_left(container, 12, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(container, 12, LV_PART_MAIN);
+    if (field == UI_FLOW_CLIENT_OBSERVATIONS) {
+        lv_obj_set_scroll_dir(container, LV_DIR_VER);
+        lv_obj_set_scrollbar_mode(container, LV_SCROLLBAR_MODE_AUTO);
+    } else {
+        lv_obj_set_scroll_dir(container, LV_DIR_NONE);
+        lv_obj_set_scrollbar_mode(container, LV_SCROLLBAR_MODE_OFF);
+    }
+    lv_obj_t *title_label = lv_label_create(container);
+    lv_label_set_text(title_label, title);
+    lv_obj_set_style_text_color(title_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(title_label, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_t *value_label = lv_label_create(container);
+    lv_obj_set_width(value_label, 210);
+    lv_label_set_long_mode(value_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(value_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    lv_obj_set_style_text_color(value_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_label_set_text(value_label, s_ui_flow.client_values[field]);
+    lv_obj_align(value_label, LV_ALIGN_RIGHT_MID, 0, 0);
+    s_ui_flow.client_value_labels[field] = value_label;
+    lv_obj_add_flag(container, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(container, ui_flow_client_field_click_cb, LV_EVENT_CLICKED,
+                        (void *)(uintptr_t)field);
 }
 
 /**
@@ -1282,6 +1884,28 @@ static void ui_flow_main_menu_button_cb(lv_event_t *event)
 }
 
 /**
+ * @brief Abre a lista de relatórios persistidos.
+ *
+ * @param[in] event Evento de toque do botão Relatorios.
+ */
+static void ui_flow_reports_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_reports();
+}
+
+/**
+ * @brief Abre a tela de diagnóstico do equipamento.
+ *
+ * @param[in] event Evento de toque do botão Diagnostico.
+ */
+static void ui_flow_diagnostic_button_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_diagnostic();
+}
+
+/**
  * @brief Cria sob demanda e carrega a tela do osciloscópio.
  *
  * @param[in] event Evento LVGL da escolha do tipo de bico.
@@ -1289,6 +1913,7 @@ static void ui_flow_main_menu_button_cb(lv_event_t *event)
 static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
 {
     (void)event;
+    ui_flow_stop_cycle_finished_timer();
     ui_flow_destroy_wifi_panel();
     ui_flow_destroy_bluetooth_panel();
     if (s_ui_flow.menu_clock_timer != NULL) {
@@ -1299,7 +1924,11 @@ static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
     if (osc_create(NULL) != ESP_OK || osc_get_screen() == NULL) {
         return;
     }
+    date_time_format_time(s_ui_flow.test_start_time, sizeof(s_ui_flow.test_start_time));
+    memset(s_ui_flow.test_end_time, 0, sizeof(s_ui_flow.test_end_time));
     lv_screen_load_anim(osc_get_screen(), LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+    s_ui_flow.cycle_finished_timer = lv_timer_create(ui_flow_cycle_finished_timer_cb,
+                                                      UI_FLOW_CYCLE_FINISHED_DELAY_MS, NULL);
 }
 
 /**
@@ -1328,6 +1957,10 @@ static void ui_flow_bicos_step_two_button_cb(lv_event_t *event)
 static void ui_flow_injector_type_button_cb(lv_event_t *event)
 {
     s_ui_flow.injector_type = (ui_flow_injector_type_t)(uintptr_t)lv_event_get_user_data(event);
+    strncpy(s_ui_flow.selected_test_description,
+            s_ui_flow.injector_type == UI_FLOW_INJECTOR_75V_GDI ? "Bico GDI" : "12V Bico Comum",
+            sizeof(s_ui_flow.selected_test_description) - 1U);
+    s_ui_flow.selected_test_description[sizeof(s_ui_flow.selected_test_description) - 1U] = '\0';
     ui_flow_show_bicos_step_two();
 }
 
@@ -1359,6 +1992,22 @@ static void ui_flow_automatic_tests_more_button_cb(lv_event_t *event)
     ui_flow_show_automatic_tests_second_page();
 }
 
+/**
+ * @brief Registra a descrição do teste automático escolhido e inicia o osciloscópio.
+ *
+ * @param[in] event Evento de toque do teste automático.
+ */
+static void ui_flow_automatic_test_start_cb(lv_event_t *event)
+{
+    const char *test_description = lv_event_get_user_data(event);
+    if (test_description != NULL) {
+        strncpy(s_ui_flow.selected_test_description, test_description,
+                sizeof(s_ui_flow.selected_test_description) - 1U);
+        s_ui_flow.selected_test_description[sizeof(s_ui_flow.selected_test_description) - 1U] = '\0';
+    }
+    ui_flow_oscilloscope_button_cb(event);
+}
+
 /** @brief Retorna do osciloscópio ao menu sem destruir sua tela persistente. */
 static void ui_flow_oscilloscope_menu_cb(void)
 {
@@ -1375,6 +2024,8 @@ static void ui_flow_oscilloscope_menu_cb(void)
  */
 static void ui_flow_show_main_menu(void)
 {
+    ui_flow_stop_cycle_finished_timer();
+    lv_display_trigger_activity(NULL);
     ui_flow_close_manual_popup();
     ui_flow_destroy_general_panel();
     ui_flow_destroy_about_panel();
@@ -1410,9 +2061,35 @@ static void ui_flow_show_main_menu(void)
                             LV_EVENT_CLICKED,
                             NULL);
     }
+    if (guider_ui.screen_menu_principal.button_relatorio != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_menu_principal.button_relatorio,
+                            ui_flow_reports_button_cb, LV_EVENT_CLICKED, NULL);
+    }
+    if (guider_ui.screen_menu_principal.button_diagnostico != NULL) {
+        lv_obj_add_event_cb(guider_ui.screen_menu_principal.button_diagnostico,
+                            ui_flow_diagnostic_button_cb, LV_EVENT_CLICKED, NULL);
+    }
     s_ui_flow.menu_clock_timer = lv_timer_create(ui_flow_menu_clock_update_cb, 1000, NULL);
     ui_flow_menu_clock_update_cb(s_ui_flow.menu_clock_timer);
     lv_screen_load_anim(guider_ui.screen_menu_principal.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, delete_previous_screen);
+}
+
+/** @brief Cria e carrega a tela exibida após um minuto sem toque no menu. */
+static void ui_flow_show_standby(void)
+{
+    if (s_ui_flow.menu_clock_timer != NULL) {
+        lv_timer_delete(s_ui_flow.menu_clock_timer);
+        s_ui_flow.menu_clock_timer = NULL;
+    }
+    memset(&guider_ui.screen_stand_by, 0, sizeof(guider_ui.screen_stand_by));
+    setup_screen_stand_by(&guider_ui);
+    if (guider_ui.screen_stand_by.screen == NULL || guider_ui.screen_stand_by.image_stand_by == NULL) {
+        return;
+    }
+    lv_obj_t *image = guider_ui.screen_stand_by.image_stand_by;
+    lv_obj_add_event_cb(guider_ui.screen_stand_by.screen, ui_flow_standby_activity_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(image, ui_flow_standby_activity_cb, LV_EVENT_PRESSED, NULL);
+    lv_screen_load_anim(guider_ui.screen_stand_by.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
 
 /** @brief Cria, conecta e carrega a tela de escolha do tipo de bico. */
@@ -1536,6 +2213,526 @@ static void ui_flow_show_ready_to_start(void)
                         LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
 
+/** @brief Cria, preenche e carrega a tela de conclusão temporária do ciclo. */
+static void ui_flow_show_cycle_finished(void)
+{
+    memset(&guider_ui.screen_ciclo_finalizado, 0, sizeof(guider_ui.screen_ciclo_finalizado));
+    setup_screen_ciclo_finalizado(&guider_ui);
+    if (guider_ui.screen_ciclo_finalizado.screen == NULL) {
+        return;
+    }
+    ui_flow_cycle_finished_populate_info();
+    lv_obj_add_event_cb(guider_ui.screen_ciclo_finalizado.button_avancar,
+                        ui_flow_cycle_finished_advance_cb, LV_EVENT_CLICKED, NULL);
+    lv_screen_load_anim(guider_ui.screen_ciclo_finalizado.screen,
+                        LV_SCREEN_LOAD_ANIM_NONE, 0, 0, false);
+    osc_destroy();
+}
+
+/**
+ * @brief Avança do resumo final do ciclo para o preenchimento dos dados do cliente.
+ *
+ * @param[in] event Evento de toque do botão Avancar.
+ */
+static void ui_flow_cycle_finished_advance_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_show_client_data();
+}
+
+/** @brief Cria, configura e apresenta a tela de dados do cliente. */
+static void ui_flow_show_client_data(void)
+{
+    memset(s_ui_flow.client_values, 0, sizeof(s_ui_flow.client_values));
+    s_ui_flow.client_selected_date = (lv_calendar_date_t){0};
+    s_ui_flow.client_highlighted_date = (lv_calendar_date_t){0};
+    memset(&guider_ui.screen_dados_cliente, 0, sizeof(guider_ui.screen_dados_cliente));
+    memset(s_ui_flow.client_value_labels, 0, sizeof(s_ui_flow.client_value_labels));
+    setup_screen_dados_cliente(&guider_ui);
+    if (guider_ui.screen_dados_cliente.screen == NULL) {
+        return;
+    }
+    ui_flow_setup_client_field(guider_ui.screen_dados_cliente.container_nome,
+                               "Nome do Cliente*", UI_FLOW_CLIENT_NAME);
+    ui_flow_setup_client_field(guider_ui.screen_dados_cliente.container_data,
+                               "Data", UI_FLOW_CLIENT_DATE);
+    ui_flow_setup_client_field(guider_ui.screen_dados_cliente.container_telefone,
+                               "Telefone", UI_FLOW_CLIENT_PHONE);
+    ui_flow_setup_client_field(guider_ui.screen_dados_cliente.container_veiculo,
+                               "Veiculo", UI_FLOW_CLIENT_VEHICLE);
+    ui_flow_setup_client_field(guider_ui.screen_dados_cliente.container_placa,
+                               "Placa", UI_FLOW_CLIENT_PLATE);
+    ui_flow_setup_client_field(guider_ui.screen_dados_cliente.container_km,
+                               "Km", UI_FLOW_CLIENT_KM);
+    ui_flow_setup_client_field(guider_ui.screen_dados_cliente.container_obs,
+                               "Observacoes", UI_FLOW_CLIENT_OBSERVATIONS);
+    lv_obj_add_event_cb(guider_ui.screen_dados_cliente.button_gerar_relatorio,
+                        ui_flow_save_client_report_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(guider_ui.screen_dados_cliente.button_cancelar,
+                        ui_flow_cancel_report_cb, LV_EVENT_CLICKED, NULL);
+    lv_screen_load_anim(guider_ui.screen_dados_cliente.screen,
+                        LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+}
+
+/**
+ * @brief Preenche um container do relatório final com um resumo de texto rolável.
+ *
+ * @param[in] container Container exportado pelo GUI Guider.
+ * @param[in] text Texto de resumo a exibir.
+ */
+static void ui_flow_fill_final_report_container(lv_obj_t *container, const char *text)
+{
+    if (container == NULL) {
+        return;
+    }
+    lv_obj_clean(container);
+    lv_obj_set_scroll_dir(container, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(container, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_pad_left(container, 12, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(container, 12, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(container, 8, LV_PART_MAIN);
+    lv_obj_t *label = lv_label_create(container);
+    lv_obj_set_width(label, lv_pct(100));
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+}
+
+/**
+ * @brief Retorna ao menu principal a partir do relatório final.
+ *
+ * @param[in] event Evento de toque do botão Menu Principal.
+ */
+static void ui_flow_final_report_menu_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_ui_flow.final_report_from_list) {
+        ui_flow_show_reports();
+    } else {
+        ui_flow_show_main_menu();
+    }
+}
+
+/** @brief Cria e apresenta o resumo final do relatório que acabou de ser salvo. */
+static void ui_flow_show_final_report(void)
+{
+    char customer_summary[512] = {0};
+    char cycle_summary[512] = {0};
+    if (!s_ui_flow.selected_report_valid) {
+        return;
+    }
+    const report_storage_record_t *report = &s_ui_flow.selected_report;
+    lv_snprintf(customer_summary, sizeof(customer_summary),
+                "Data: %s\nNome: %s\nTelefone: %s\nVeiculo: %s\nPlaca: %s\nKm: %s\nObservacoes: %s",
+                report->date, report->customer_name, report->phone, report->vehicle, report->plate,
+                report->mileage, report->observations);
+    lv_snprintf(cycle_summary, sizeof(cycle_summary),
+                "Bico: %s\nTeste: %s\nHorario Inicial: %s\nHorario Termino: %s\nPressao: %u bar\nRPM: %lu\nPulso: %u ms\nCiclos: %lu\nTempo Total: %02lu:%02lu",
+                report->injector_type, report->test_description, report->start_time, report->end_time,
+                (unsigned)report->pressure_bar,
+                (unsigned long)report->rpm, (unsigned)report->pulse_ms,
+                (unsigned long)report->cycles_executed, (unsigned long)(report->total_seconds / 60U),
+                (unsigned long)(report->total_seconds % 60U));
+    memset(&guider_ui.screen_relatorio_final, 0, sizeof(guider_ui.screen_relatorio_final));
+    setup_screen_relatorio_final(&guider_ui);
+    if (guider_ui.screen_relatorio_final.screen == NULL) {
+        return;
+    }
+    ui_flow_fill_final_report_container(guider_ui.screen_relatorio_final.container_dados_cliente,
+                                        customer_summary);
+    ui_flow_fill_final_report_container(guider_ui.screen_relatorio_final.container_dados_ciclo,
+                                        cycle_summary);
+    lv_obj_add_event_cb(guider_ui.screen_relatorio_final.button_menu_principal,
+                        ui_flow_final_report_menu_cb, LV_EVENT_CLICKED, NULL);
+    if (s_ui_flow.final_report_from_list) {
+        lv_label_set_text(guider_ui.screen_relatorio_final.button_menu_principal_label_bt_menu_principal,
+                          "Voltar");
+    }
+    lv_screen_load_anim(guider_ui.screen_relatorio_final.screen,
+                        LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+}
+
+/** @brief Fecha o teclado usado no campo de busca de relatórios. */
+static void ui_flow_close_report_search_keyboard(void)
+{
+    if (s_ui_flow.report_search_keyboard != NULL) {
+        lv_obj_delete(s_ui_flow.report_search_keyboard);
+        s_ui_flow.report_search_keyboard = NULL;
+        s_ui_flow.report_search_textarea = NULL;
+    }
+}
+
+/**
+ * @brief Confirma o texto da busca visual de relatórios.
+ *
+ * O filtro será acrescentado posteriormente; nesta etapa o texto apenas é exibido no campo Buscar.
+ *
+ * @param[in] event Evento de confirmação do teclado.
+ */
+static void ui_flow_report_search_ready_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_ui_flow.report_search_textarea != NULL) {
+        strncpy(s_ui_flow.report_search_text, lv_textarea_get_text(s_ui_flow.report_search_textarea),
+                sizeof(s_ui_flow.report_search_text) - 1U);
+        s_ui_flow.report_search_text[sizeof(s_ui_flow.report_search_text) - 1U] = '\0';
+    }
+    if (s_ui_flow.report_search_label != NULL) {
+        lv_label_set_text(s_ui_flow.report_search_label,
+                          s_ui_flow.report_search_text[0] == '\0' ? "Buscar" : s_ui_flow.report_search_text);
+    }
+    ui_flow_close_report_search_keyboard();
+    if (s_ui_flow.report_search_label == NULL) {
+        return;
+    }
+    bool has_match = false;
+    ui_flow_populate_reports_list(s_ui_flow.report_search_text, &has_match);
+    if (!has_match) {
+        ui_flow_show_search_empty_popup();
+    }
+}
+
+/**
+ * @brief Cancela a busca visual sem alterar o texto exibido.
+ *
+ * @param[in] event Evento de cancelamento do teclado.
+ */
+static void ui_flow_report_search_cancel_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_report_search_keyboard();
+}
+
+/**
+ * @brief Abre o teclado para escrever no campo Buscar da lista de relatórios.
+ *
+ * @param[in] event Evento de toque da imagem de busca.
+ */
+static void ui_flow_show_report_search_keyboard(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_report_search_keyboard();
+    s_ui_flow.report_search_keyboard = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.report_search_keyboard, 800, 350);
+    lv_obj_set_pos(s_ui_flow.report_search_keyboard, 0, 130);
+    lv_obj_set_style_bg_color(s_ui_flow.report_search_keyboard, lv_color_hex(0x111111), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.report_search_keyboard, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.report_search_keyboard, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_t *title = lv_label_create(s_ui_flow.report_search_keyboard);
+    lv_label_set_text(title, "Buscar Relatorio");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_pos(title, 16, 5);
+    s_ui_flow.report_search_textarea = lv_textarea_create(s_ui_flow.report_search_keyboard);
+    lv_obj_set_size(s_ui_flow.report_search_textarea, 500, 42);
+    lv_obj_set_pos(s_ui_flow.report_search_textarea, 16, 27);
+    lv_textarea_set_one_line(s_ui_flow.report_search_textarea, true);
+    lv_textarea_set_text(s_ui_flow.report_search_textarea, s_ui_flow.report_search_text);
+    lv_obj_t *keyboard = lv_keyboard_create(s_ui_flow.report_search_keyboard);
+    lv_obj_set_size(keyboard, 760, 220);
+    lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_keyboard_set_textarea(keyboard, s_ui_flow.report_search_textarea);
+    lv_obj_add_event_cb(keyboard, ui_flow_report_search_ready_cb, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(keyboard, ui_flow_report_search_cancel_cb, LV_EVENT_CANCEL, NULL);
+}
+
+/**
+ * @brief Abre o relatório selecionado na lista persistida.
+ *
+ * @param[in] event Evento de toque de um card de relatório.
+ */
+static void ui_flow_report_card_click_cb(lv_event_t *event)
+{
+    const uint32_t recent_index = (uint32_t)(uintptr_t)lv_event_get_user_data(event);
+    if (report_storage_get_recent(recent_index, &s_ui_flow.selected_report) == ESP_OK) {
+        s_ui_flow.selected_report_valid = true;
+        s_ui_flow.final_report_from_list = true;
+        ui_flow_show_final_report();
+    }
+}
+
+/**
+ * @brief Cria um card compacto para um relatório armazenado.
+ *
+ * @param[in] parent Container rolável que receberá o card.
+ * @param[in] record Relatório a resumir no card.
+ * @param[in] recent_index Índice usado para recuperar o relatório quando o card for selecionado.
+ */
+static void ui_flow_add_report_card(lv_obj_t *parent, const report_storage_record_t *record,
+                                    uint32_t recent_index)
+{
+    lv_obj_t *card = lv_button_create(parent);
+    lv_obj_set_size(card, lv_pct(100), 82);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x151a1c), LV_PART_MAIN);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(card, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(card, 8, LV_PART_MAIN);
+    lv_obj_t *date = lv_label_create(card);
+    lv_label_set_text_fmt(date, "%s - %s", record->date, record->start_time);
+    lv_obj_set_style_text_color(date, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(date, &lv_font_montserratMedium_20, LV_PART_MAIN);
+    lv_obj_set_pos(date, 12, 7);
+    lv_obj_t *description = lv_label_create(card);
+    lv_obj_set_width(description, 540);
+    lv_label_set_long_mode(description, LV_LABEL_LONG_DOT);
+    lv_label_set_text_fmt(description, "%s - %s", record->customer_name, record->vehicle);
+    lv_obj_set_style_text_color(description, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(description, &lv_font_montserratMedium_20, LV_PART_MAIN);
+    lv_obj_set_pos(description, 12, 43);
+    lv_obj_t *arrow = lv_label_create(card);
+    lv_label_set_text(arrow, ">");
+    lv_obj_set_style_text_color(arrow, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(arrow, &lv_font_montserratMedium_20, LV_PART_MAIN);
+    lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -14, 0);
+    lv_obj_add_event_cb(card, ui_flow_report_card_click_cb, LV_EVENT_CLICKED,
+                        (void *)(uintptr_t)recent_index);
+}
+
+/**
+ * @brief Verifica se um texto está contido em outro sem diferenciar maiúsculas e minúsculas ASCII.
+ *
+ * @param[in] text Texto no qual a busca será realizada.
+ * @param[in] filter Termo de busca informado pelo usuário.
+ * @return @c true quando o termo ocorrer no texto ou estiver vazio.
+ */
+static bool ui_flow_report_name_matches(const char *text, const char *filter)
+{
+    if (filter == NULL || filter[0] == '\0') {
+        return true;
+    }
+    for (; *text != '\0'; text++) {
+        const char *text_cursor = text;
+        const char *filter_cursor = filter;
+        while (*text_cursor != '\0' && *filter_cursor != '\0' &&
+               tolower((unsigned char)*text_cursor) == tolower((unsigned char)*filter_cursor)) {
+            text_cursor++;
+            filter_cursor++;
+        }
+        if (*filter_cursor == '\0') {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Recria a lista com todos os relatórios ou apenas os nomes que correspondem ao filtro.
+ *
+ * @param[in] filter Texto a procurar nos nomes dos clientes.
+ * @param[out] out_has_match Recebe se pelo menos um card foi criado, opcional.
+ */
+static void ui_flow_populate_reports_list(const char *filter, bool *out_has_match)
+{
+    if (out_has_match != NULL) {
+        *out_has_match = false;
+    }
+    lv_obj_t *list = guider_ui.screen_relatorio.container_relatorios_infos;
+    if (list == NULL) {
+        return;
+    }
+    lv_obj_clean(list);
+    uint32_t count = 0;
+    if (report_storage_get_count(&count) != ESP_OK) {
+        return;
+    }
+    for (uint32_t index = 0; index < count; index++) {
+        report_storage_record_t record = {0};
+        if (report_storage_get_recent(index, &record) == ESP_OK &&
+            ui_flow_report_name_matches(record.customer_name, filter)) {
+            ui_flow_add_report_card(list, &record, index);
+            if (out_has_match != NULL) {
+                *out_has_match = true;
+            }
+        }
+    }
+}
+
+/**
+ * @brief Fecha o aviso de lista vazia e retorna ao menu principal.
+ *
+ * @param[in] event Evento de toque do botão OK.
+ */
+static void ui_flow_no_reports_ok_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_report_popup();
+    ui_flow_show_main_menu();
+}
+
+/** @brief Mostra aviso quando não há relatórios persistidos. */
+static void ui_flow_show_no_reports_popup(void)
+{
+    ui_flow_close_report_popup();
+    s_ui_flow.report_popup = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.report_popup, 360, 150);
+    lv_obj_center(s_ui_flow.report_popup);
+    lv_obj_set_style_bg_color(s_ui_flow.report_popup, lv_color_hex(0x101416), LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.report_popup, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.report_popup, 2, LV_PART_MAIN);
+    lv_obj_t *message = lv_label_create(s_ui_flow.report_popup);
+    lv_label_set_text(message, "Nenhum relatorio salvo.");
+    lv_obj_set_style_text_color(message, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(message, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_t *ok = lv_button_create(s_ui_flow.report_popup);
+    lv_obj_set_size(ok, 100, 36);
+    lv_obj_align(ok, LV_ALIGN_BOTTOM_MID, 0, -12);
+    lv_obj_add_event_cb(ok, ui_flow_no_reports_ok_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label = lv_label_create(ok);
+    lv_label_set_text(label, "OK");
+    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(label);
+}
+
+/**
+ * @brief Fecha o aviso de busca sem resultados e mantém a tela de relatórios aberta.
+ *
+ * @param[in] event Evento de toque do botão OK.
+ */
+static void ui_flow_search_empty_ok_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_report_popup();
+}
+
+/** @brief Mostra aviso quando nenhum nome corresponde ao texto pesquisado. */
+static void ui_flow_show_search_empty_popup(void)
+{
+    ui_flow_close_report_popup();
+    s_ui_flow.report_popup = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.report_popup, 380, 150);
+    lv_obj_center(s_ui_flow.report_popup);
+    lv_obj_set_style_bg_color(s_ui_flow.report_popup, lv_color_hex(0x101416), LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.report_popup, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.report_popup, 2, LV_PART_MAIN);
+    lv_obj_t *message = lv_label_create(s_ui_flow.report_popup);
+    lv_label_set_text(message, "A busca nao encontrou nada.");
+    lv_obj_set_style_text_color(message, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(message, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_t *ok = lv_button_create(s_ui_flow.report_popup);
+    lv_obj_set_size(ok, 100, 36);
+    lv_obj_align(ok, LV_ALIGN_BOTTOM_MID, 0, -12);
+    lv_obj_add_event_cb(ok, ui_flow_search_empty_ok_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label = lv_label_create(ok);
+    lv_label_set_text(label, "OK");
+    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(label);
+}
+
+/** @brief Cria a lista rolável de relatórios salvos, ordenada do mais recente ao mais antigo. */
+static void ui_flow_show_reports(void)
+{
+    uint32_t count = 0;
+    if (report_storage_get_count(&count) != ESP_OK || count == 0) {
+        ui_flow_show_no_reports_popup();
+        return;
+    }
+    if (s_ui_flow.menu_clock_timer != NULL) {
+        lv_timer_delete(s_ui_flow.menu_clock_timer);
+        s_ui_flow.menu_clock_timer = NULL;
+    }
+    memset(&guider_ui.screen_relatorio, 0, sizeof(guider_ui.screen_relatorio));
+    setup_screen_relatorio(&guider_ui);
+    if (guider_ui.screen_relatorio.screen == NULL) {
+        return;
+    }
+    lv_obj_add_event_cb(guider_ui.screen_relatorio.button_voltar,
+                        ui_flow_main_menu_button_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(guider_ui.screen_relatorio.button_home,
+                        ui_flow_main_menu_button_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *search = guider_ui.screen_relatorio.container_buscar;
+    memset(s_ui_flow.report_search_text, 0, sizeof(s_ui_flow.report_search_text));
+    lv_obj_set_scroll_dir(search, LV_DIR_NONE);
+    lv_obj_set_scrollbar_mode(search, LV_SCROLLBAR_MODE_OFF);
+    s_ui_flow.report_search_label = lv_label_create(search);
+    lv_label_set_text(s_ui_flow.report_search_label, "Buscar");
+    lv_obj_set_style_text_color(s_ui_flow.report_search_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(s_ui_flow.report_search_label, LV_ALIGN_LEFT_MID, 12, 0);
+    lv_obj_add_flag(guider_ui.screen_relatorio.image_buscar, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(guider_ui.screen_relatorio.image_buscar, ui_flow_show_report_search_keyboard,
+                        LV_EVENT_CLICKED, NULL);
+    lv_obj_t *list = guider_ui.screen_relatorio.container_relatorios_infos;
+    lv_obj_clean(list);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_pad_left(list, 20, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(list, 20, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(list, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(list, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(list, 7, LV_PART_MAIN);
+    ui_flow_populate_reports_list("", NULL);
+    lv_screen_load_anim(guider_ui.screen_relatorio.screen,
+                        LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+}
+
+/**
+ * @brief Adiciona uma linha de estado ao painel de diagnóstico.
+ *
+ * @param[in] parent Container que receberá a linha.
+ * @param[in] name Nome do parâmetro de diagnóstico.
+ * @param[in] value Valor demonstrativo do parâmetro.
+ */
+static void ui_flow_add_diagnostic_row(lv_obj_t *parent, const char *name, const char *value)
+{
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_set_size(row, lv_pct(100), 38);
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x151a1c), LV_PART_MAIN);
+    lv_obj_set_style_border_color(row, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(row, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(row, 7, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(row, 12, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(row, 12, LV_PART_MAIN);
+    lv_obj_set_scroll_dir(row, LV_DIR_NONE);
+    lv_obj_t *name_label = lv_label_create(row);
+    lv_label_set_text(name_label, name);
+    lv_obj_set_style_text_color(name_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(name_label, &lv_font_montserratMedium_20, LV_PART_MAIN);
+    lv_obj_align(name_label, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_t *value_label = lv_label_create(row);
+    lv_label_set_text(value_label, value);
+    lv_obj_set_style_text_color(value_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(value_label, &lv_font_montserratMedium_20, LV_PART_MAIN);
+    lv_obj_align(value_label, LV_ALIGN_RIGHT_MID, 0, 0);
+}
+
+/** @brief Cria e apresenta a tela de diagnóstico do equipamento. */
+static void ui_flow_show_diagnostic(void)
+{
+    if (s_ui_flow.menu_clock_timer != NULL) {
+        lv_timer_delete(s_ui_flow.menu_clock_timer);
+        s_ui_flow.menu_clock_timer = NULL;
+    }
+    memset(&guider_ui.screen_diagnostico, 0, sizeof(guider_ui.screen_diagnostico));
+    setup_screen_diagnostico(&guider_ui);
+    if (guider_ui.screen_diagnostico.screen == NULL) {
+        return;
+    }
+    lv_obj_add_event_cb(guider_ui.screen_diagnostico.button_voltar,
+                        ui_flow_main_menu_button_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(guider_ui.screen_diagnostico.button_home,
+                        ui_flow_main_menu_button_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *list = guider_ui.screen_diagnostico.container_list;
+    lv_obj_clean(list);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_pad_left(list, 12, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(list, 12, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(list, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(list, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(list, 4, LV_PART_MAIN);
+    ui_flow_add_diagnostic_row(list, "Tensao do Sistema", "12.5 V");
+    ui_flow_add_diagnostic_row(list, "Pressao Atual", "150 bar");
+    ui_flow_add_diagnostic_row(list, "Temperatura", "45 C");
+    ui_flow_add_diagnostic_row(list, "Bomba", "Ligada");
+    ui_flow_add_diagnostic_row(list, "Dreno", "Fechado");
+    ui_flow_add_diagnostic_row(list, "Ultrassom", "OK");
+    ui_flow_add_diagnostic_row(list, "Eletrovalvula", "OK");
+    lv_screen_load_anim(guider_ui.screen_diagnostico.screen,
+                        LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+}
+
 /** @brief Cria, conecta e carrega a tela de seleção de testes automáticos. */
 static void ui_flow_show_automatic_tests(void)
 {
@@ -1561,9 +2758,14 @@ static void ui_flow_show_automatic_tests(void)
         guider_ui.screen_testes_automaticos.button_leque_vazao_equa,
         guider_ui.screen_testes_automaticos.button_auto
     };
+    static const char *const test_descriptions[] = {
+        "Teste Leque", "Equalizacao de Vazao", "Equalizacao Vazao/Temperatura",
+        "Teste de Estanqueidade", "Teste em Rotacoes", "Leque/Vazao/Equalizacao", "Automatico"
+    };
     for (uint32_t index = 0; index < sizeof(test_buttons) / sizeof(test_buttons[0]); index++) {
         if (test_buttons[index] != NULL) {
-            lv_obj_add_event_cb(test_buttons[index], ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
+            lv_obj_add_event_cb(test_buttons[index], ui_flow_automatic_test_start_cb,
+                                LV_EVENT_CLICKED, (void *)test_descriptions[index]);
         }
     }
     if (guider_ui.screen_testes_automaticos.button_mais != NULL) {
@@ -1594,9 +2796,13 @@ static void ui_flow_show_automatic_tests_second_page(void)
         guider_ui.screen_testes_automaticos_2.button_leque_vazao_equa,
         guider_ui.screen_testes_automaticos_2.button_teste_circulacao
     };
+    static const char *const test_descriptions[] = {
+        "Leque/Vazao/Equalizacao", "Teste de Circulacao"
+    };
     for (uint32_t index = 0; index < sizeof(test_buttons) / sizeof(test_buttons[0]); index++) {
         if (test_buttons[index] != NULL) {
-            lv_obj_add_event_cb(test_buttons[index], ui_flow_oscilloscope_button_cb, LV_EVENT_CLICKED, NULL);
+            lv_obj_add_event_cb(test_buttons[index], ui_flow_automatic_test_start_cb,
+                                LV_EVENT_CLICKED, (void *)test_descriptions[index]);
         }
     }
     lv_screen_load_anim(guider_ui.screen_testes_automaticos_2.screen,

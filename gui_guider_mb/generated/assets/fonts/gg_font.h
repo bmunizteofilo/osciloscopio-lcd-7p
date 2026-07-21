@@ -17,7 +17,7 @@
  *
  * Tool            : GUI Guider
  * Version         : 2.0.0
- * Generated on    : 13/07/2026
+ * Generated on    : 21/07/2026
  * ------------------------------------------------------------------------------
  */
 
@@ -34,6 +34,7 @@ LV_FONT_DECLARE(lv_font_montserratMedium_30);
 LV_FONT_DECLARE(lv_font_montserratMedium_16);
 LV_FONT_DECLARE(lv_font_montserratMedium_20);
 LV_FONT_DECLARE(lv_font_montserratMedium_18);
+LV_FONT_DECLARE(lv_font_montserratMedium_14);
 
 #ifdef __cplusplus
 }

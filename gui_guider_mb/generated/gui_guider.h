@@ -17,7 +17,7 @@
  *
  * Tool            : GUI Guider
  * Version         : 2.0.0
- * Generated on    : 13/07/2026
+ * Generated on    : 21/07/2026
  * ------------------------------------------------------------------------------
  */
 
@@ -232,6 +232,73 @@ typedef struct {
 } gg_screen_testes_automaticos_2_t;
 
 typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * image_stand_by;
+} gg_screen_stand_by_t;
+
+typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * button_avancar;
+    lv_obj_t * button_avancar_label_bt_avancar;
+    lv_obj_t * container_infos;
+    lv_obj_t * label_ciclo_finalizado;
+    lv_obj_t * image_correto;
+} gg_screen_ciclo_finalizado_t;
+
+typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * container_data;
+    lv_obj_t * button_cancelar;
+    lv_obj_t * button_cancelar_label_bt_cancelar;
+    lv_obj_t * button_gerar_relatorio;
+    lv_obj_t * button_gerar_relatorio_label_bt_gerar_relatorio;
+    lv_obj_t * label_dados_cliente;
+    lv_obj_t * container_obs;
+    lv_obj_t * container_km;
+    lv_obj_t * container_placa;
+    lv_obj_t * container_veiculo;
+    lv_obj_t * container_telefone;
+    lv_obj_t * container_nome;
+} gg_screen_dados_cliente_t;
+
+typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * button_menu_principal;
+    lv_obj_t * button_menu_principal_label_bt_menu_principal;
+    lv_obj_t * container_dados_ciclo;
+    lv_obj_t * label_dados_cliente;
+    lv_obj_t * container_dados_cliente;
+    lv_obj_t * label_relatorio;
+    lv_obj_t * image_mecanica_avancada;
+} gg_screen_relatorio_final_t;
+
+typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * button_4;
+    lv_obj_t * button_home;
+    lv_obj_t * button_home_image_bt_home;
+    lv_obj_t * button_voltar;
+    lv_obj_t * button_voltar_image_bt_voltar;
+    lv_obj_t * button_relatorio;
+    lv_obj_t * button_relatorio_label_bt_relatorio;
+    lv_obj_t * container_relatorios_infos;
+    lv_obj_t * image_buscar;
+    lv_obj_t * container_buscar;
+} gg_screen_relatorio_t;
+
+typedef struct {
+    lv_obj_t * screen;
+    lv_obj_t * container_list;
+    lv_obj_t * button_bottom;
+    lv_obj_t * button_home;
+    lv_obj_t * button_home_image_bt_home;
+    lv_obj_t * button_voltar;
+    lv_obj_t * button_voltar_image_bt_voltar;
+    lv_obj_t * button_top;
+    lv_obj_t * button_top_label_bt_top;
+} gg_screen_diagnostico_t;
+
+typedef struct {
     gg_layer_sys_t layer_sys;
     gg_layer_top_t layer_top;
     gg_layer_bottom_t layer_bottom;
@@ -244,6 +311,12 @@ typedef struct {
     gg_screen_pronto_pra_iniciar_t screen_pronto_pra_iniciar;
     gg_screen_testes_automaticos_t screen_testes_automaticos;
     gg_screen_testes_automaticos_2_t screen_testes_automaticos_2;
+    gg_screen_stand_by_t screen_stand_by;
+    gg_screen_ciclo_finalizado_t screen_ciclo_finalizado;
+    gg_screen_dados_cliente_t screen_dados_cliente;
+    gg_screen_relatorio_final_t screen_relatorio_final;
+    gg_screen_relatorio_t screen_relatorio;
+    gg_screen_diagnostico_t screen_diagnostico;
 } gg_ui_t;
 
 typedef struct {
@@ -269,6 +342,12 @@ void setup_screen_bicos_step_config_manual(gg_ui_t * ui);
 void setup_screen_pronto_pra_iniciar(gg_ui_t * ui);
 void setup_screen_testes_automaticos(gg_ui_t * ui);
 void setup_screen_testes_automaticos_2(gg_ui_t * ui);
+void setup_screen_stand_by(gg_ui_t * ui);
+void setup_screen_ciclo_finalizado(gg_ui_t * ui);
+void setup_screen_dados_cliente(gg_ui_t * ui);
+void setup_screen_relatorio_final(gg_ui_t * ui);
+void setup_screen_relatorio(gg_ui_t * ui);
+void setup_screen_diagnostico(gg_ui_t * ui);
 
 #ifdef __cplusplus
 }

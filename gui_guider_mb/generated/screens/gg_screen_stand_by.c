@@ -25,15 +25,29 @@
 #include "gg_utils.h"
 #include "events/gg_event.h"
 
-void setup_layer_bottom(gg_ui_t * ui)
+void setup_screen_stand_by(gg_ui_t * ui)
 {
-    // Setup lv_layer_bottom()
+    // Create screen: screen_stand_by
+    ui->screen_stand_by.screen = lv_obj_create(NULL);
+    lv_obj_set_user_data(ui->screen_stand_by.screen, &ui->screen_stand_by.screen);
 
-    // layer_bottom custom code
+    // Style: ui->screen_stand_by.screen [LV_PART_MAIN|LV_STATE_DEFAULT]
+    lv_obj_set_style_bg_color(ui->screen_stand_by.screen, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    // Update layer_bottom layout.
-    lv_obj_update_layout(lv_layer_bottom());
+    // Create image: ui->screen_stand_by.image_stand_by
+    ui->screen_stand_by.image_stand_by = lv_image_create(ui->screen_stand_by.screen);
+    lv_obj_set_width(ui->screen_stand_by.image_stand_by, 320);
+    lv_obj_set_height(ui->screen_stand_by.image_stand_by, 240);
+    lv_obj_set_align(ui->screen_stand_by.image_stand_by, LV_ALIGN_TOP_LEFT);
+    lv_obj_set_x(ui->screen_stand_by.image_stand_by, 240);
+    lv_obj_set_y(ui->screen_stand_by.image_stand_by, 120);
+    lv_image_set_src(ui->screen_stand_by.image_stand_by, &mecanica_avancada_320x240_RGB565A8);
 
-    // Init events of layer_bottom.
-    gg_event_init_layer_bottom(ui);
+    // screen_stand_by custom code
+
+    // Update screen_stand_by layout.
+    lv_obj_update_layout(ui->screen_stand_by.screen);
+
+    // Init events of screen_stand_by.
+    gg_event_init_screen_stand_by(ui);
 }

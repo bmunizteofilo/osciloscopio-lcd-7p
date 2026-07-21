@@ -17,7 +17,7 @@
  *
  * Tool            : GUI Guider
  * Version         : 2.0.0
- * Generated on    : 13/07/2026
+ * Generated on    : 21/07/2026
  * ------------------------------------------------------------------------------
  */
 
@@ -53,6 +53,9 @@ LV_IMAGE_DECLARE(alvo_40x40_RGB565A8);
 LV_IMAGE_DECLARE(agua_40x40_RGB565A8);
 LV_IMAGE_DECLARE(equalizacao_40x40_RGB565A8);
 LV_IMAGE_DECLARE(ciclo_40x40_RGB565A8);
+LV_IMAGE_DECLARE(correto_154x127_RGB565A8);
+LV_IMAGE_DECLARE(mecanica_avancada_196x100_RGB565A8);
+LV_IMAGE_DECLARE(procurar_40x40_RGB565A8);
 
 #ifdef __cplusplus
 }

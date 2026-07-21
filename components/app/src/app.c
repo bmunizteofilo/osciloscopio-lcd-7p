@@ -15,6 +15,7 @@
 #include "wifi_manager.h"
 #include "date_time.h"
 #include "general_settings.h"
+#include "report_storage.h"
 
 #define APP_I2C_SCL_GPIO DRIVER_GPIO_NUM_47
 #define APP_I2C_SDA_GPIO DRIVER_GPIO_NUM_48
@@ -199,6 +200,7 @@ esp_err_t app_init(void)
         nvs_err = nvs_flash_init();
     }
     ESP_RETURN_ON_ERROR(nvs_err, TAG, "falha ao inicializar NVS");
+    ESP_RETURN_ON_ERROR(report_storage_init(), TAG, "falha ao iniciar armazenamento de relatorios");
     driver_i2c_bus_handle_t i2c_bus = NULL;
     ESP_RETURN_ON_ERROR(app_i2c_init(&i2c_bus), TAG, "falha ao inicializar I2C");
 
