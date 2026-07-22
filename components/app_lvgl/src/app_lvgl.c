@@ -123,10 +123,12 @@ static void app_lvgl_touch_read_cb(lv_indev_t *input, lv_indev_data_t *data)
     gt911_touch_data_t touch_data = {0};
     gt911_touch_handle_t touch = (gt911_touch_handle_t)lv_indev_get_user_data(input);
     if (gt911_touch_read(touch, &touch_data) == ESP_OK && touch_data.touched && touch_data.points > 0) {
+        ui_flow_handle_multitouch(&touch_data);
         data->state = LV_INDEV_STATE_PRESSED;
         data->point.x = touch_data.x[0];
         data->point.y = touch_data.y[0];
     } else {
+        ui_flow_handle_multitouch(&touch_data);
         data->state = LV_INDEV_STATE_RELEASED;
     }
 }

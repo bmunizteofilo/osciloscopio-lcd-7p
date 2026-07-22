@@ -5,6 +5,7 @@
 #include <string.h>
 #include <time.h>
 #include "esp_check.h"
+#include "nvs.h"
 #include "gui_guider.h"
 #include "gg_utils.h"
 #include "wifi_manager.h"
@@ -18,6 +19,9 @@
 #define UI_FLOW_SPLASH_BAR_RADIUS 15
 #define UI_FLOW_STANDBY_TIMEOUT_MS 90000U
 #define UI_FLOW_CYCLE_FINISHED_DELAY_MS 5000U
+#define UI_FLOW_MENU_DRAG_THRESHOLD_PX 18
+#define UI_FLOW_MENU_LAYOUT_NAMESPACE "menu_layout"
+#define UI_FLOW_MENU_LAYOUT_KEY "ordem"
 
 /** @brief Identificadores dos parâmetros ajustáveis do modo manual. */
 typedef enum {
@@ -34,6 +38,24 @@ typedef enum {
     UI_FLOW_INJECTOR_12V,
     UI_FLOW_INJECTOR_75V_GDI
 } ui_flow_injector_type_t;
+
+/** @brief Identificadores estáveis dos cards que podem ocupar os slots do menu. */
+typedef enum {
+    UI_FLOW_MENU_CLEANING,
+    UI_FLOW_MENU_TEST_MODE,
+    UI_FLOW_MENU_REPORTS,
+    UI_FLOW_MENU_DIAGNOSTIC,
+    UI_FLOW_MENU_SETTINGS,
+    UI_FLOW_MENU_ITEM_COUNT
+} ui_flow_menu_item_t;
+
+/** @brief Geometria fixa de uma posição do menu principal. */
+typedef struct {
+    int16_t x;
+    int16_t y;
+    uint16_t width;
+    uint16_t height;
+} ui_flow_menu_slot_t;
 
 /** @brief Campos editáveis dos dados apresentados no fechamento do ciclo. */
 typedef enum {
@@ -94,6 +116,15 @@ typedef struct {
     report_storage_record_t selected_report;
     bool selected_report_valid;
     bool final_report_from_list;
+    lv_obj_t *menu_drag_source;
+    lv_obj_t *menu_drag_target;
+    int32_t menu_drag_start_x;
+    int32_t menu_drag_start_y;
+    int32_t menu_drag_source_x;
+    int32_t menu_drag_source_y;
+    bool menu_dragging;
+    uint8_t menu_slot_order[UI_FLOW_MENU_ITEM_COUNT];
+    bool menu_layout_loaded;
     bool preserve_oscilloscope_screen;
     lv_obj_t *general_panel;
     lv_obj_t *general_popup;
@@ -124,6 +155,24 @@ static ui_flow_context_t s_ui_flow = {
     .manual_cycles = 1,
     .manual_pause = 100,
     .manual_temperature = 25
+};
+
+/** @brief Ordem visual padrão dos cards nos cinco slots do menu. */
+static const uint8_t s_ui_flow_default_menu_order[UI_FLOW_MENU_ITEM_COUNT] = {
+    UI_FLOW_MENU_CLEANING,
+    UI_FLOW_MENU_TEST_MODE,
+    UI_FLOW_MENU_REPORTS,
+    UI_FLOW_MENU_DIAGNOSTIC,
+    UI_FLOW_MENU_SETTINGS,
+};
+
+/** @brief Posições grandes superiores e posições compactas inferiores do menu principal. */
+static const ui_flow_menu_slot_t s_ui_flow_menu_slots[UI_FLOW_MENU_ITEM_COUNT] = {
+    {.x = 10, .y = 92, .width = 385, .height = 181},
+    {.x = 405, .y = 92, .width = 385, .height = 181},
+    {.x = 10, .y = 288, .width = 253, .height = 166},
+    {.x = 273, .y = 288, .width = 253, .height = 166},
+    {.x = 537, .y = 288, .width = 253, .height = 166},
 };
 
 /** @brief Anos disponíveis para seleção manual no calendário. */
@@ -1905,6 +1954,292 @@ static void ui_flow_diagnostic_button_cb(lv_event_t *event)
     ui_flow_show_diagnostic();
 }
 
+/** @brief Retorna o objeto raiz de um card a partir de seu identificador persistido. */
+static lv_obj_t *ui_flow_get_menu_button(ui_flow_menu_item_t item)
+{
+    switch (item) {
+    case UI_FLOW_MENU_CLEANING: return guider_ui.screen_menu_principal.button_limpeza_bico;
+    case UI_FLOW_MENU_TEST_MODE: return guider_ui.screen_menu_principal.button_modo_teste;
+    case UI_FLOW_MENU_REPORTS: return guider_ui.screen_menu_principal.button_relatorio;
+    case UI_FLOW_MENU_DIAGNOSTIC: return guider_ui.screen_menu_principal.button_diagnostico;
+    case UI_FLOW_MENU_SETTINGS: return guider_ui.screen_menu_principal.button_configuracoes;
+    default: return NULL;
+    }
+}
+
+/** @brief Retorna o identificador persistido correspondente a um card do menu. */
+static ui_flow_menu_item_t ui_flow_get_menu_item(const lv_obj_t *button)
+{
+    for (uint32_t item = 0; item < UI_FLOW_MENU_ITEM_COUNT; item++) {
+        if (ui_flow_get_menu_button((ui_flow_menu_item_t)item) == button) {
+            return (ui_flow_menu_item_t)item;
+        }
+    }
+    return UI_FLOW_MENU_ITEM_COUNT;
+}
+
+/** @brief Verifica se uma ordem de slots contém cada card uma única vez. */
+static bool ui_flow_menu_order_is_valid(const uint8_t *order)
+{
+    bool present[UI_FLOW_MENU_ITEM_COUNT] = {0};
+    for (uint32_t slot = 0; slot < UI_FLOW_MENU_ITEM_COUNT; slot++) {
+        if (order[slot] >= UI_FLOW_MENU_ITEM_COUNT || present[order[slot]]) {
+            return false;
+        }
+        present[order[slot]] = true;
+    }
+    return true;
+}
+
+/** @brief Persiste a ordem atual dos cards do menu na NVS. */
+static void ui_flow_save_menu_layout(void)
+{
+    nvs_handle_t handle = 0;
+    if (nvs_open(UI_FLOW_MENU_LAYOUT_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return;
+    }
+    if (nvs_set_blob(handle, UI_FLOW_MENU_LAYOUT_KEY, s_ui_flow.menu_slot_order,
+                     sizeof(s_ui_flow.menu_slot_order)) == ESP_OK) {
+        (void)nvs_commit(handle);
+    }
+    nvs_close(handle);
+}
+
+/** @brief Carrega a ordem persistida ou restaura a disposição padrão quando não houver uma válida. */
+static void ui_flow_load_menu_layout(void)
+{
+    if (s_ui_flow.menu_layout_loaded) {
+        return;
+    }
+    size_t size = sizeof(s_ui_flow.menu_slot_order);
+    nvs_handle_t handle = 0;
+    esp_err_t error = nvs_open(UI_FLOW_MENU_LAYOUT_NAMESPACE, NVS_READWRITE, &handle);
+    if (error == ESP_OK) {
+        error = nvs_get_blob(handle, UI_FLOW_MENU_LAYOUT_KEY, s_ui_flow.menu_slot_order, &size);
+        nvs_close(handle);
+    }
+    if (error != ESP_OK || size != sizeof(s_ui_flow.menu_slot_order) ||
+        !ui_flow_menu_order_is_valid(s_ui_flow.menu_slot_order)) {
+        memcpy(s_ui_flow.menu_slot_order, s_ui_flow_default_menu_order,
+               sizeof(s_ui_flow.menu_slot_order));
+        ui_flow_save_menu_layout();
+    }
+    s_ui_flow.menu_layout_loaded = true;
+}
+
+/** @brief Centraliza localmente o ícone e o texto de um card após a mudança de tamanho. */
+static void ui_flow_align_menu_card_content(ui_flow_menu_item_t item)
+{
+    lv_obj_t *image = NULL;
+    lv_obj_t *label = NULL;
+    switch (item) {
+    case UI_FLOW_MENU_CLEANING:
+        image = guider_ui.screen_menu_principal.button_limpeza_bico_image_bt_limpeza_bico;
+        label = guider_ui.screen_menu_principal.button_limpeza_bico_label_bt_limpeza_bico;
+        break;
+    case UI_FLOW_MENU_TEST_MODE:
+        image = guider_ui.screen_menu_principal.button_modo_teste_image_bt_modo_teste;
+        label = guider_ui.screen_menu_principal.button_modo_teste_label_bt_modo_teste;
+        break;
+    case UI_FLOW_MENU_REPORTS:
+        image = guider_ui.screen_menu_principal.button_relatorio_image_bt_relatorio;
+        label = guider_ui.screen_menu_principal.button_relatorio_label_bt_relatorios;
+        break;
+    case UI_FLOW_MENU_DIAGNOSTIC:
+        image = guider_ui.screen_menu_principal.button_diagnostico_image_bt_diagnostico;
+        label = guider_ui.screen_menu_principal.button_diagnostico_label_bt_diagnosticos;
+        break;
+    case UI_FLOW_MENU_SETTINGS:
+        image = guider_ui.screen_menu_principal.button_configuracoes_image_bt_configuracoes;
+        label = guider_ui.screen_menu_principal.button_configuracoes_label_bt_configuracoes;
+        break;
+    default: return;
+    }
+    if (image != NULL) {
+        lv_obj_align(image, LV_ALIGN_TOP_MID, 0, 0);
+    }
+    if (label != NULL) {
+        lv_obj_align(label, LV_ALIGN_BOTTOM_MID, 0, -18);
+    }
+}
+
+/** @brief Aplica a geometria de cada slot ao card que ocupa a posição correspondente. */
+static void ui_flow_apply_menu_layout(void)
+{
+    ui_flow_load_menu_layout();
+    for (uint32_t slot = 0; slot < UI_FLOW_MENU_ITEM_COUNT; slot++) {
+        const ui_flow_menu_item_t item = (ui_flow_menu_item_t)s_ui_flow.menu_slot_order[slot];
+        lv_obj_t *button = ui_flow_get_menu_button(item);
+        if (button == NULL) {
+            continue;
+        }
+        lv_obj_set_size(button, s_ui_flow_menu_slots[slot].width, s_ui_flow_menu_slots[slot].height);
+        lv_obj_set_pos(button, s_ui_flow_menu_slots[slot].x, s_ui_flow_menu_slots[slot].y);
+        ui_flow_align_menu_card_content(item);
+    }
+}
+
+/** @brief Troca os slots ocupados por dois cards e persiste a nova organização. */
+static void ui_flow_swap_menu_slots(lv_obj_t *first_button, lv_obj_t *second_button)
+{
+    const ui_flow_menu_item_t first = ui_flow_get_menu_item(first_button);
+    const ui_flow_menu_item_t second = ui_flow_get_menu_item(second_button);
+    if (first >= UI_FLOW_MENU_ITEM_COUNT || second >= UI_FLOW_MENU_ITEM_COUNT || first == second) {
+        return;
+    }
+    uint32_t first_slot = UI_FLOW_MENU_ITEM_COUNT;
+    uint32_t second_slot = UI_FLOW_MENU_ITEM_COUNT;
+    for (uint32_t slot = 0; slot < UI_FLOW_MENU_ITEM_COUNT; slot++) {
+        if (s_ui_flow.menu_slot_order[slot] == first) {
+            first_slot = slot;
+        }
+        if (s_ui_flow.menu_slot_order[slot] == second) {
+            second_slot = slot;
+        }
+    }
+    if (first_slot >= UI_FLOW_MENU_ITEM_COUNT || second_slot >= UI_FLOW_MENU_ITEM_COUNT) {
+        return;
+    }
+    const uint8_t temp = s_ui_flow.menu_slot_order[first_slot];
+    s_ui_flow.menu_slot_order[first_slot] = s_ui_flow.menu_slot_order[second_slot];
+    s_ui_flow.menu_slot_order[second_slot] = temp;
+    ui_flow_apply_menu_layout();
+    ui_flow_save_menu_layout();
+}
+
+/** @brief Informa se um ponto absoluto da tela está dentro de um objeto LVGL. */
+static bool ui_flow_menu_point_in_object(const lv_obj_t *object, int32_t x, int32_t y)
+{
+    if (object == NULL) {
+        return false;
+    }
+    lv_area_t area = {0};
+    lv_obj_get_coords(object, &area);
+    return x >= area.x1 && x <= area.x2 && y >= area.y1 && y <= area.y2;
+}
+
+/** @brief Retorna o card do menu principal localizado sob um ponto da tela. */
+static lv_obj_t *ui_flow_menu_button_at(int32_t x, int32_t y, const lv_obj_t *ignored)
+{
+    lv_obj_t *const buttons[] = {
+        guider_ui.screen_menu_principal.button_configuracoes,
+        guider_ui.screen_menu_principal.button_diagnostico,
+        guider_ui.screen_menu_principal.button_relatorio,
+        guider_ui.screen_menu_principal.button_modo_teste,
+        guider_ui.screen_menu_principal.button_limpeza_bico,
+    };
+    for (uint32_t index = 0; index < sizeof(buttons) / sizeof(buttons[0]); index++) {
+        if (buttons[index] != ignored && ui_flow_menu_point_in_object(buttons[index], x, y)) {
+            return buttons[index];
+        }
+    }
+    return NULL;
+}
+
+/** @brief Retorna o card que está coberto em pelo menos metade pelo card arrastado. */
+static lv_obj_t *ui_flow_menu_overlap_target(const lv_obj_t *source)
+{
+    if (source == NULL) {
+        return NULL;
+    }
+    lv_area_t source_area = {0};
+    lv_obj_get_coords(source, &source_area);
+    const int32_t source_area_size = (source_area.x2 - source_area.x1 + 1) *
+                                     (source_area.y2 - source_area.y1 + 1);
+    lv_obj_t *const buttons[] = {
+        guider_ui.screen_menu_principal.button_configuracoes,
+        guider_ui.screen_menu_principal.button_diagnostico,
+        guider_ui.screen_menu_principal.button_relatorio,
+        guider_ui.screen_menu_principal.button_modo_teste,
+        guider_ui.screen_menu_principal.button_limpeza_bico,
+    };
+    for (uint32_t index = 0; index < sizeof(buttons) / sizeof(buttons[0]); index++) {
+        if (buttons[index] == NULL || buttons[index] == source) {
+            continue;
+        }
+        lv_area_t candidate_area = {0};
+        lv_obj_get_coords(buttons[index], &candidate_area);
+        const int32_t left = source_area.x1 > candidate_area.x1 ? source_area.x1 : candidate_area.x1;
+        const int32_t top = source_area.y1 > candidate_area.y1 ? source_area.y1 : candidate_area.y1;
+        const int32_t right = source_area.x2 < candidate_area.x2 ? source_area.x2 : candidate_area.x2;
+        const int32_t bottom = source_area.y2 < candidate_area.y2 ? source_area.y2 : candidate_area.y2;
+        if (right >= left && bottom >= top &&
+            (right - left + 1) * (bottom - top + 1) * 2 >= source_area_size) {
+            return buttons[index];
+        }
+    }
+    return NULL;
+}
+
+/** @brief Finaliza uma reorganização e troca os cards se houver um destino válido. */
+static void ui_flow_finish_menu_drag(void)
+{
+    lv_obj_t *source = s_ui_flow.menu_drag_source;
+    lv_obj_t *target = s_ui_flow.menu_drag_target;
+    if (source != NULL) {
+        if (s_ui_flow.menu_dragging && target != NULL) {
+            ui_flow_swap_menu_slots(source, target);
+        } else {
+            ui_flow_apply_menu_layout();
+        }
+        lv_obj_add_flag(source, LV_OBJ_FLAG_CLICKABLE);
+    }
+    s_ui_flow.menu_drag_source = NULL;
+    s_ui_flow.menu_drag_target = NULL;
+    s_ui_flow.menu_dragging = false;
+}
+
+/**
+ * @brief Detecta e executa a reorganização de cards com dois dedos no menu principal.
+ *
+ * @param[in] touch_data Pontos de toque brutos mais recentes do GT911.
+ */
+void ui_flow_handle_multitouch(const gt911_touch_data_t *touch_data)
+{
+    if (touch_data == NULL) {
+        return;
+    }
+    if (lv_screen_active() != guider_ui.screen_menu_principal.screen) {
+        s_ui_flow.menu_drag_source = NULL;
+        s_ui_flow.menu_drag_target = NULL;
+        s_ui_flow.menu_dragging = false;
+        return;
+    }
+    if (!touch_data->touched || touch_data->points != 2U) {
+        ui_flow_finish_menu_drag();
+        return;
+    }
+    const int32_t center_x = ((int32_t)touch_data->x[0] + (int32_t)touch_data->x[1]) / 2;
+    const int32_t center_y = ((int32_t)touch_data->y[0] + (int32_t)touch_data->y[1]) / 2;
+    if (s_ui_flow.menu_drag_source == NULL) {
+        lv_obj_t *first = ui_flow_menu_button_at(touch_data->x[0], touch_data->y[0], NULL);
+        lv_obj_t *second = ui_flow_menu_button_at(touch_data->x[1], touch_data->y[1], NULL);
+        if (first == NULL || first != second) {
+            return;
+        }
+        s_ui_flow.menu_drag_source = first;
+        s_ui_flow.menu_drag_start_x = center_x;
+        s_ui_flow.menu_drag_start_y = center_y;
+        s_ui_flow.menu_drag_source_x = lv_obj_get_x(first);
+        s_ui_flow.menu_drag_source_y = lv_obj_get_y(first);
+        return;
+    }
+    const int32_t delta_x = center_x - s_ui_flow.menu_drag_start_x;
+    const int32_t delta_y = center_y - s_ui_flow.menu_drag_start_y;
+    if (!s_ui_flow.menu_dragging &&
+        delta_x * delta_x + delta_y * delta_y >= UI_FLOW_MENU_DRAG_THRESHOLD_PX * UI_FLOW_MENU_DRAG_THRESHOLD_PX) {
+        s_ui_flow.menu_dragging = true;
+        lv_obj_remove_flag(s_ui_flow.menu_drag_source, LV_OBJ_FLAG_CLICKABLE);
+        lv_indev_wait_release(lv_indev_active());
+    }
+    if (s_ui_flow.menu_dragging) {
+        lv_obj_set_pos(s_ui_flow.menu_drag_source,
+                       center_x - (int32_t)lv_obj_get_width(s_ui_flow.menu_drag_source) / 2,
+                       center_y - (int32_t)lv_obj_get_height(s_ui_flow.menu_drag_source) / 2);
+        s_ui_flow.menu_drag_target = ui_flow_menu_overlap_target(s_ui_flow.menu_drag_source);
+    }
+}
+
 /**
  * @brief Cria sob demanda e carrega a tela do osciloscópio.
  *
@@ -2069,6 +2404,7 @@ static void ui_flow_show_main_menu(void)
         lv_obj_add_event_cb(guider_ui.screen_menu_principal.button_diagnostico,
                             ui_flow_diagnostic_button_cb, LV_EVENT_CLICKED, NULL);
     }
+    ui_flow_apply_menu_layout();
     s_ui_flow.menu_clock_timer = lv_timer_create(ui_flow_menu_clock_update_cb, 1000, NULL);
     ui_flow_menu_clock_update_cb(s_ui_flow.menu_clock_timer);
     lv_screen_load_anim(guider_ui.screen_menu_principal.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, delete_previous_screen);
