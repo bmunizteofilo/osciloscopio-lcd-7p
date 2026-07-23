@@ -1,11 +1,15 @@
 #include "app.h"
 
+#include <string.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_attr.h"
 #include "esp_check.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "driver_i2c.h"
+#include "driver_gpio.h"
 #include "driver_spi.h"
 #include "driver/spi_master.h"
 #include "app_lvgl.h"
@@ -20,24 +24,40 @@
 #define APP_I2C_SCL_GPIO DRIVER_GPIO_NUM_47
 #define APP_I2C_SDA_GPIO DRIVER_GPIO_NUM_48
 #define APP_I2C_SPEED_HZ 400000
-#define APP_SPI_MOSI_GPIO DRIVER_GPIO_NUM_1
-#define APP_SPI_MISO_GPIO DRIVER_GPIO_NUM_2
-#define APP_SPI_SCLK_GPIO DRIVER_GPIO_NUM_4
-#define APP_SPI_CS_GPIO DRIVER_GPIO_NUM_19
+#define APP_SPI_MOSI_GPIO DRIVER_GPIO_NUM_41
+#define APP_SPI_MISO_GPIO DRIVER_GPIO_NUM_4
+#define APP_SPI_SCLK_GPIO DRIVER_GPIO_NUM_1
+#define APP_SPI_CS_GPIO DRIVER_GPIO_NUM_20
+#define APP_SPI_DRV_GPIO DRIVER_GPIO_NUM_2
+#define APP_SPI_SYNC_GPIO DRIVER_GPIO_NUM_42
 #define APP_SPI_MAX_TRANSFER_SIZE 4096
 #define APP_SPI_CLOCK_HZ (10U * 1000U * 1000U)
 #define APP_SPI_QUEUE_SIZE 4
 #define APP_SPI_DUMMY_BYTE 0xff
 #define APP_SPI_ALIVE_COMMAND 0x00
+#define APP_SPI_READ_RESPONSE_COMMAND 0x80
 #define APP_SPI_ALIVE_MAGIC_0 0xa5
 #define APP_SPI_ALIVE_MAGIC_1 0x5a
-#define APP_SPI_PROTOCOL_VERSION 0x01
+#define APP_SPI_PROTOCOL_VERSION 0x02
 #define APP_SPI_ALIVE_TRANSACTION_SIZE 4
+#define APP_SPI_SYNC_TIMEOUT_MS 100
+#define APP_SPI_TEST_ACQUISITION_ENABLED 1
+#define APP_SPI_TEST_LOG_PERIOD_MS 3000
+#define APP_SPI_TEST_PROFILE 0
+#define APP_SPI_REQUEST_SIZE 4
+#define APP_SPI_RESPONSE_PREFIX_SIZE 1
+#define APP_SPI_BLOCK_HEADER_SIZE 4
+#define APP_SPI_MAX_BLOCK_PAYLOAD_SIZE 2048
+#define APP_SPI_MAX_RESPONSE_SIZE (APP_SPI_RESPONSE_PREFIX_SIZE + APP_SPI_BLOCK_HEADER_SIZE + APP_SPI_MAX_BLOCK_PAYLOAD_SIZE)
+#define APP_SPI_OPCODE_CONFIG_PROFILE 0x01
+#define APP_SPI_OPCODE_START 0x02
+#define APP_SPI_OPCODE_READ_BLOCK 0x10
+#define APP_SPI_RESULT_OK 0x00
 #define APP_SPI_RETRY_PERIOD_MS 5000
 #define APP_SPI_SUPERVISOR_STACK_SIZE 3072
 #define APP_SPI_SUPERVISOR_PRIORITY 5
 #define APP_SPI_ACQUISITION_STACK_SIZE 4096
-#define APP_SPI_ACQUISITION_PRIORITY 6
+#define APP_SPI_ACQUISITION_PRIORITY 8
 
 /** @brief Tag usada nos registros de inicialização da aplicação. */
 static const char *TAG = "app";
@@ -46,10 +66,50 @@ static const char *TAG = "app";
 typedef struct {
     driver_spi_device_handle_t device;
     TaskHandle_t acquisition_task;
+    volatile TaskHandle_t sync_waiter;
 } app_spi_context_t;
 
 /** @brief Contexto global usado exclusivamente pelas tarefas do core 0. */
 static app_spi_context_t s_spi;
+
+/** @brief Buffers persistentes da transação de resposta da task SPI. */
+static uint8_t s_spi_response_tx[APP_SPI_MAX_RESPONSE_SIZE];
+static uint8_t s_spi_response_rx[APP_SPI_MAX_RESPONSE_SIZE];
+
+/**
+ * @brief Notifica a task SPI de que a STM publicou um bloco ADC em DRV.
+ *
+ * @param[in] argument Não utilizado.
+ */
+static void IRAM_ATTR app_spi_drv_isr(void *argument)
+{
+    (void)argument;
+    if (s_spi.acquisition_task != NULL) {
+        BaseType_t higher_priority_task_woken = pdFALSE;
+        vTaskNotifyGiveFromISR(s_spi.acquisition_task, &higher_priority_task_woken);
+        if (higher_priority_task_woken == pdTRUE) {
+            portYIELD_FROM_ISR();
+        }
+    }
+}
+
+/**
+ * @brief Notifica a task aguardando uma mudança de nível no sinal SYNC.
+ *
+ * @param[in] argument Não utilizado.
+ */
+static void IRAM_ATTR app_spi_sync_isr(void *argument)
+{
+    (void)argument;
+    TaskHandle_t waiter = s_spi.sync_waiter;
+    if (waiter != NULL) {
+        BaseType_t higher_priority_task_woken = pdFALSE;
+        vTaskNotifyGiveFromISR(waiter, &higher_priority_task_woken);
+        if (higher_priority_task_woken == pdTRUE) {
+            portYIELD_FROM_ISR();
+        }
+    }
+}
 
 /**
  * @brief Inicializa o barramento I2C compartilhado pela tela de toque e pelo expansor.
@@ -111,6 +171,39 @@ static esp_err_t app_spi_device_init(driver_spi_bus_handle_t bus, driver_spi_dev
 }
 
 /**
+ * @brief Aguarda SYNC alcançar o nível solicitado pela máquina SPI da STM32.
+ *
+ * @param[in] expected_level Nível lógico aguardado.
+ * @return ESP_OK ao observar o nível ou ESP_ERR_TIMEOUT se ele não ocorrer.
+ */
+static esp_err_t app_spi_wait_sync_level(bool expected_level)
+{
+    const TickType_t timeout = pdMS_TO_TICKS(APP_SPI_SYNC_TIMEOUT_MS);
+    for (;;) {
+        bool level = false;
+        ESP_RETURN_ON_ERROR(driver_gpio_get_level(APP_SPI_SYNC_GPIO, &level), TAG,
+                            "falha ao ler SYNC");
+        if (level == expected_level) {
+            return ESP_OK;
+        }
+
+        s_spi.sync_waiter = xTaskGetCurrentTaskHandle();
+        (void)ulTaskNotifyTake(pdTRUE, 0);
+        ESP_RETURN_ON_ERROR(driver_gpio_get_level(APP_SPI_SYNC_GPIO, &level), TAG,
+                            "falha ao reler SYNC");
+        if (level == expected_level) {
+            s_spi.sync_waiter = NULL;
+            return ESP_OK;
+        }
+        if (ulTaskNotifyTake(pdTRUE, timeout) == 0U) {
+            s_spi.sync_waiter = NULL;
+            return ESP_ERR_TIMEOUT;
+        }
+        s_spi.sync_waiter = NULL;
+    }
+}
+
+/**
  * @brief Confirma que o firmware compatível da STM32 responde no SPI.
  *
  * @param[in] device Dispositivo SPI da placa de aquisição.
@@ -118,16 +211,105 @@ static esp_err_t app_spi_device_init(driver_spi_bus_handle_t bus, driver_spi_dev
  */
 static esp_err_t app_spi_alive(driver_spi_device_handle_t device)
 {
-    const uint8_t tx[APP_SPI_ALIVE_TRANSACTION_SIZE] = {
+    const uint8_t request_tx[APP_SPI_ALIVE_TRANSACTION_SIZE] = {
         APP_SPI_ALIVE_COMMAND, APP_SPI_DUMMY_BYTE, APP_SPI_DUMMY_BYTE, APP_SPI_DUMMY_BYTE,
     };
-    uint8_t rx[APP_SPI_ALIVE_TRANSACTION_SIZE] = {0};
+    const uint8_t response_tx[APP_SPI_ALIVE_TRANSACTION_SIZE] = {
+        APP_SPI_READ_RESPONSE_COMMAND, APP_SPI_DUMMY_BYTE, APP_SPI_DUMMY_BYTE, APP_SPI_DUMMY_BYTE,
+    };
+    uint8_t response_rx[APP_SPI_ALIVE_TRANSACTION_SIZE] = {0};
 
-    ESP_RETURN_ON_ERROR(driver_spi_transfer(device, tx, rx, sizeof(tx)), TAG, "falha na consulta ALIVE");
-    ESP_RETURN_ON_FALSE(rx[1] == APP_SPI_ALIVE_MAGIC_0 && rx[2] == APP_SPI_ALIVE_MAGIC_1 &&
-                            rx[3] == APP_SPI_PROTOCOL_VERSION,
+    ESP_RETURN_ON_ERROR(driver_spi_transfer(device, request_tx, NULL, sizeof(request_tx)), TAG,
+                        "falha ao enviar consulta ALIVE");
+    ESP_RETURN_ON_ERROR(app_spi_wait_sync_level(true), TAG, "SYNC nao confirmou resposta ALIVE");
+    ESP_RETURN_ON_ERROR(driver_spi_transfer(device, response_tx, response_rx, sizeof(response_tx)), TAG,
+                        "falha ao ler resposta ALIVE");
+    ESP_RETURN_ON_ERROR(app_spi_wait_sync_level(false), TAG, "SYNC nao liberou nova requisicao ALIVE");
+    ESP_RETURN_ON_FALSE(response_rx[1] == APP_SPI_ALIVE_MAGIC_0 &&
+                            response_rx[2] == APP_SPI_ALIVE_MAGIC_1 &&
+                            response_rx[3] == APP_SPI_PROTOCOL_VERSION,
                         ESP_ERR_NOT_FOUND, TAG, "assinatura STM32 invalida: %02X %02X %02X",
-                        rx[1], rx[2], rx[3]);
+                        response_rx[1], response_rx[2], response_rx[3]);
+    return ESP_OK;
+}
+
+/**
+ * @brief Executa as fases REQUEST e RESPONSE de um comando SPI.
+ *
+ * @param[in] device Dispositivo SPI da STM32.
+ * @param[in] opcode Opcode da requisição.
+ * @param[in] argument_0 Primeiro argumento.
+ * @param[in] argument_1 Segundo argumento.
+ * @param[in] argument_2 Terceiro argumento.
+ * @param[in] response_data_length Quantidade esperada de bytes úteis na resposta.
+ * @return ESP_OK em sucesso ou erro de comunicação/validação.
+ */
+static esp_err_t app_spi_execute_command(driver_spi_device_handle_t device, uint8_t opcode,
+                                         uint8_t argument_0, uint8_t argument_1,
+                                         uint8_t argument_2, size_t response_data_length)
+{
+    ESP_RETURN_ON_FALSE(response_data_length + APP_SPI_RESPONSE_PREFIX_SIZE <= APP_SPI_MAX_RESPONSE_SIZE,
+                        ESP_ERR_INVALID_SIZE, TAG, "resposta SPI grande demais");
+
+    const uint8_t request_tx[APP_SPI_REQUEST_SIZE] = {opcode, argument_0, argument_1, argument_2};
+    const size_t response_length = APP_SPI_RESPONSE_PREFIX_SIZE + response_data_length;
+    memset(s_spi_response_tx, APP_SPI_DUMMY_BYTE, response_length);
+    s_spi_response_tx[0] = APP_SPI_READ_RESPONSE_COMMAND;
+    memset(s_spi_response_rx, 0, response_length);
+
+    ESP_RETURN_ON_ERROR(driver_spi_transfer(device, request_tx, NULL, sizeof(request_tx)), TAG,
+                        "falha ao enviar comando SPI");
+    ESP_RETURN_ON_ERROR(app_spi_wait_sync_level(true), TAG, "SYNC nao confirmou resposta SPI");
+    ESP_RETURN_ON_ERROR(driver_spi_transfer(device, s_spi_response_tx, s_spi_response_rx, response_length), TAG,
+                        "falha ao ler resposta SPI");
+    ESP_RETURN_ON_ERROR(app_spi_wait_sync_level(false), TAG, "SYNC nao liberou nova requisicao SPI");
+    return ESP_OK;
+}
+
+/**
+ * @brief Configura e inicia a aquisição ADC da STM32 para o teste SPI.
+ *
+ * @param[in] device Dispositivo SPI da STM32.
+ * @return ESP_OK se a STM confirmou configuração e início.
+ */
+static esp_err_t app_spi_start_test_acquisition(driver_spi_device_handle_t device)
+{
+    ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_CONFIG_PROFILE,
+                                                APP_SPI_TEST_PROFILE, 0, 0, 1),
+                        TAG, "falha ao configurar perfil SPI");
+    ESP_RETURN_ON_FALSE(s_spi_response_rx[1] == APP_SPI_RESULT_OK, ESP_FAIL, TAG,
+                        "STM recusou perfil SPI: %02X", s_spi_response_rx[1]);
+
+    ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_START, 0, 0, 0, 1), TAG,
+                        "falha ao iniciar aquisicao SPI");
+    ESP_RETURN_ON_FALSE(s_spi_response_rx[1] == APP_SPI_RESULT_OK, ESP_FAIL, TAG,
+                        "STM recusou inicio SPI: %02X", s_spi_response_rx[1]);
+    return ESP_OK;
+}
+
+/**
+ * @brief Lê um bloco ADC pronto e registra apenas seus metadados.
+ *
+ * @param[in] device Dispositivo SPI da STM32.
+ * @param[out] out_sequence Sequência do bloco recebido.
+ * @return ESP_OK em sucesso ou erro de protocolo.
+ */
+static esp_err_t app_spi_read_test_block(driver_spi_device_handle_t device, uint8_t *out_sequence)
+{
+    ESP_RETURN_ON_FALSE(out_sequence != NULL, ESP_ERR_INVALID_ARG, TAG, "sequencia de bloco invalida");
+    ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_READ_BLOCK, 0, 0, 0,
+                                                APP_SPI_BLOCK_HEADER_SIZE + APP_SPI_MAX_BLOCK_PAYLOAD_SIZE),
+                        TAG, "falha ao solicitar bloco SPI");
+
+    const uint8_t sequence = s_spi_response_rx[1];
+    const uint8_t profile = s_spi_response_rx[2];
+    const uint16_t frame_count = (uint16_t)s_spi_response_rx[3] |
+                                 ((uint16_t)s_spi_response_rx[4] << 8U);
+    const size_t payload_length = (size_t)frame_count * 8U;
+    ESP_RETURN_ON_FALSE(profile <= 3U && payload_length <= APP_SPI_MAX_BLOCK_PAYLOAD_SIZE,
+                        ESP_ERR_INVALID_RESPONSE, TAG, "cabecalho de bloco invalido");
+
+    *out_sequence = sequence;
     return ESP_OK;
 }
 
@@ -138,10 +320,56 @@ static esp_err_t app_spi_alive(driver_spi_device_handle_t device)
  */
 static void app_spi_acquisition_task(void *argument)
 {
-    (void)argument;
+    app_spi_context_t *context = argument;
+#if APP_SPI_TEST_ACQUISITION_ENABLED
+    if (driver_gpio_config_input_any_edge_interrupt(APP_SPI_DRV_GPIO, app_spi_drv_isr, NULL, false) != ESP_OK) {
+        ESP_LOGE(TAG, "falha ao configurar DRV SPI");
+        vTaskDelete(NULL);
+        return;
+    }
+    if (app_spi_start_test_acquisition(context->device) != ESP_OK) {
+        ESP_LOGE(TAG, "falha ao iniciar aquisicao SPI de teste");
+        vTaskDelete(NULL);
+        return;
+    }
+    ESP_LOGI(TAG, "Teste SPI ativo; aguardando blocos no GPIO DRV");
+
+    uint8_t previous_sequence = 0;
+    bool has_previous_sequence = false;
+    uint32_t received_blocks = 0;
+    uint32_t lost_blocks = 0;
+    TickType_t last_log = xTaskGetTickCount();
+    for (;;) {
+        bool data_ready = false;
+        if (driver_gpio_get_level(APP_SPI_DRV_GPIO, &data_ready) == ESP_OK && data_ready) {
+            uint8_t sequence = 0;
+            if (app_spi_read_test_block(context->device, &sequence) != ESP_OK) {
+                ESP_LOGW(TAG, "falha ao ler bloco SPI de teste");
+            } else {
+                if (has_previous_sequence) {
+                    lost_blocks += (uint8_t)(sequence - previous_sequence - 1U);
+                }
+                previous_sequence = sequence;
+                has_previous_sequence = true;
+                received_blocks++;
+            }
+        }
+        if ((xTaskGetTickCount() - last_log) >= pdMS_TO_TICKS(APP_SPI_TEST_LOG_PERIOD_MS)) {
+            ESP_LOGI(TAG, "SPI teste (3 s): recebidos=%u perdidos=%u", received_blocks, lost_blocks);
+            received_blocks = 0;
+            lost_blocks = 0;
+            last_log = xTaskGetTickCount();
+        }
+        if (!data_ready) {
+            (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+        }
+    }
+#else
+    (void)context;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+#endif
 }
 
 /**
@@ -156,7 +384,7 @@ static void app_spi_supervisor_task(void *argument)
         if (app_spi_alive(context->device) == ESP_OK) {
             ESP_LOGI(TAG, "Placa STM32 detectada; iniciando aquisicao SPI");
             BaseType_t created = xTaskCreatePinnedToCore(app_spi_acquisition_task, "spi_acq",
-                                                         APP_SPI_ACQUISITION_STACK_SIZE, NULL,
+                                                         APP_SPI_ACQUISITION_STACK_SIZE, context,
                                                          APP_SPI_ACQUISITION_PRIORITY,
                                                          &context->acquisition_task, 0);
             if (created == pdPASS) {
@@ -208,6 +436,8 @@ esp_err_t app_init(void)
     ESP_RETURN_ON_ERROR(app_spi_init(&spi_bus), TAG, "falha ao inicializar SPI");
     driver_spi_device_handle_t spi_device = NULL;
     ESP_RETURN_ON_ERROR(app_spi_device_init(spi_bus, &spi_device), TAG, "falha ao adicionar STM32 SPI");
+    ESP_RETURN_ON_ERROR(driver_gpio_config_input_any_edge_interrupt(APP_SPI_SYNC_GPIO, app_spi_sync_isr, NULL, true), TAG,
+                        "falha ao configurar SYNC SPI");
     ESP_RETURN_ON_ERROR(app_spi_start_supervisor(spi_device), TAG, "falha ao iniciar supervisao SPI");
 
     aw9523b_handle_t io_expander = NULL;

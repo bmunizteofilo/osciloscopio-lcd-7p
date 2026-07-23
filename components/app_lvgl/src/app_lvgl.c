@@ -23,7 +23,7 @@
 /** @brief Intervalo entre chamadas do manipulador LVGL. */
 #define APP_LVGL_TASK_DELAY_MS 5
 /** @brief Habilita o monitor periódico de heap interna e PSRAM. */
-#define APP_LVGL_MONITOR_HEAP_LOG 1
+#define APP_LVGL_MONITOR_HEAP_LOG 0
 /** @brief Período entre registros do monitor de memória. */
 #define APP_LVGL_HEAP_LOG_PERIOD_MS 5000
 /** @brief Tamanho da pilha da task opcional de monitoramento. */

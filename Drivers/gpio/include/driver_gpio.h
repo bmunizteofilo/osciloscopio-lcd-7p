@@ -11,6 +11,9 @@ extern "C" {
 
 typedef int32_t driver_gpio_num_t;
 
+/** @brief Callback executada pela ISR de mudança de nível de um GPIO. */
+typedef void (*driver_gpio_edge_callback_t)(void *argument);
+
 #define DRIVER_GPIO_NUM_NC (-1)
 #define DRIVER_GPIO_NUM_0 0
 #define DRIVER_GPIO_NUM_1 1
@@ -36,6 +39,9 @@ typedef int32_t driver_gpio_num_t;
 #define DRIVER_GPIO_NUM_21 21
 #define DRIVER_GPIO_NUM_38 38
 #define DRIVER_GPIO_NUM_39 39
+#define DRIVER_GPIO_NUM_40 40
+#define DRIVER_GPIO_NUM_41 41
+#define DRIVER_GPIO_NUM_42 42
 #define DRIVER_GPIO_NUM_45 45
 #define DRIVER_GPIO_NUM_46 46
 #define DRIVER_GPIO_NUM_47 47
@@ -56,6 +62,24 @@ int32_t driver_gpio_to_number(driver_gpio_num_t gpio);
  * @return ESP_OK em caso de sucesso.
  */
 esp_err_t driver_gpio_config_input(driver_gpio_num_t gpio);
+
+/**
+ * @brief Configura um GPIO de entrada com interrupção em ambas as bordas.
+ *
+ * A callback é executada em contexto de interrupção e deve ser curta, não
+ * bloquear e usar somente APIs seguras para ISR. O nível do GPIO deve ser
+ * consultado posteriormente em contexto de task.
+ *
+ * @param[in] gpio Número do GPIO na abstração do driver.
+ * @param[in] callback Rotina chamada a cada mudança de nível.
+ * @param[in] argument Contexto entregue à rotina @p callback.
+ * @param[in] enable_pull_down @c true para manter a entrada em nível baixo quando flutuante.
+ * @return ESP_OK em caso de sucesso.
+ */
+esp_err_t driver_gpio_config_input_any_edge_interrupt(driver_gpio_num_t gpio,
+                                                       driver_gpio_edge_callback_t callback,
+                                                       void *argument,
+                                                       bool enable_pull_down);
 
 /**
  * @brief Configura um GPIO como saida.
