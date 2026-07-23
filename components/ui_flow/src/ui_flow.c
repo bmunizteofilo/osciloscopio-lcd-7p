@@ -18,7 +18,6 @@
 #define UI_FLOW_SPLASH_DURATION_MS 5000U
 #define UI_FLOW_SPLASH_BAR_RADIUS 15
 #define UI_FLOW_STANDBY_TIMEOUT_MS 90000U
-#define UI_FLOW_CYCLE_FINISHED_DELAY_MS 5000U
 #define UI_FLOW_MENU_DRAG_THRESHOLD_PX 18
 #define UI_FLOW_MENU_LAYOUT_NAMESPACE "menu_layout"
 #define UI_FLOW_MENU_LAYOUT_KEY "ordem"
@@ -437,10 +436,8 @@ static void ui_flow_cycle_finished_populate_info(void)
 }
 
 /** @brief Finaliza a demonstração temporária e abre o resumo do ciclo. */
-static void ui_flow_cycle_finished_timer_cb(lv_timer_t *timer)
+static void ui_flow_oscilloscope_cycle_finished_cb(void)
 {
-    lv_timer_delete(timer);
-    s_ui_flow.cycle_finished_timer = NULL;
     date_time_format_time(s_ui_flow.test_end_time, sizeof(s_ui_flow.test_end_time));
     ui_flow_show_cycle_finished();
 }
@@ -2256,14 +2253,13 @@ static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
         s_ui_flow.menu_clock_timer = NULL;
     }
     osc_set_menu_callback(ui_flow_oscilloscope_menu_cb);
+    osc_set_cycle_finished_callback(ui_flow_oscilloscope_cycle_finished_cb);
     if (osc_create(NULL) != ESP_OK || osc_get_screen() == NULL) {
         return;
     }
     date_time_format_time(s_ui_flow.test_start_time, sizeof(s_ui_flow.test_start_time));
     memset(s_ui_flow.test_end_time, 0, sizeof(s_ui_flow.test_end_time));
     lv_screen_load_anim(osc_get_screen(), LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
-    s_ui_flow.cycle_finished_timer = lv_timer_create(ui_flow_cycle_finished_timer_cb,
-                                                      UI_FLOW_CYCLE_FINISHED_DELAY_MS, NULL);
 }
 
 /**

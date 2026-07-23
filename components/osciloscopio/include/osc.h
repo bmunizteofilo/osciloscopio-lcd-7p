@@ -19,6 +19,8 @@ void osc_set_lcd(wt32s3_lcd_handle_t lcd);
 
 /** @brief Função chamada pelo botão Menu do osciloscópio. */
 typedef void (*osc_menu_callback_t)(void);
+/** @brief Função chamada pelo botão Terminar Ciclo do osciloscópio. */
+typedef void (*osc_cycle_finished_callback_t)(void);
 
 /**
  * @brief Define a ação executada pelo botão Menu do osciloscópio.
@@ -26,6 +28,13 @@ typedef void (*osc_menu_callback_t)(void);
  * @param[in] callback Função de retorno para a tela principal.
  */
 void osc_set_menu_callback(osc_menu_callback_t callback);
+
+/**
+ * @brief Define a ação executada ao encerrar manualmente o ciclo.
+ *
+ * @param[in] callback Função de retorno para o resumo do ciclo.
+ */
+void osc_set_cycle_finished_callback(osc_cycle_finished_callback_t callback);
 
 /**
  * @brief Cria a interface do osciloscópio.

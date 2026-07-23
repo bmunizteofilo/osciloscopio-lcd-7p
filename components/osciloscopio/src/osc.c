@@ -194,6 +194,8 @@ static void osc_update_action_buttons(void);
 
 /** @brief Callback registrado pelo fluxo de telas para retornar ao menu principal. */
 static osc_menu_callback_t s_menu_callback;
+/** @brief Callback registrado pelo fluxo de telas para encerrar o ciclo atual. */
+static osc_cycle_finished_callback_t s_cycle_finished_callback;
 
 static uint32_t osc_theme_waveform_bg(void)
 {
@@ -1468,34 +1470,57 @@ static void osc_menu_button_event_cb(lv_event_t *event)
 }
 
 /**
- * @brief Cria os três botões de ação na metade inferior direita.
+ * @brief Encerra manualmente o ciclo pela ação registrada pela aplicação.
+ *
+ * @param[in] event Evento LVGL do botão Terminar Ciclo.
+ */
+static void osc_cycle_finished_button_event_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_cycle_finished_callback != NULL) {
+        s_cycle_finished_callback();
+    }
+}
+
+/**
+ * @brief Cria os botões de ação roláveis na metade inferior direita.
  *
  * @param[in] parent Tela principal do osciloscópio.
  */
 static void osc_create_action_buttons(lv_obj_t *parent)
 {
-    static const char *const labels[] = {"Pausar", "Parar Ciclo", "Menu"};
+    static const char *const labels[] = {"Pausar", "Parar Ciclo", "Menu", "Terminar Ciclo"};
     static lv_event_cb_t const callbacks[] = {
         osc_pause_button_event_cb,
         osc_stop_cycle_button_event_cb,
         osc_menu_button_event_cb,
+        osc_cycle_finished_button_event_cb,
     };
     lv_obj_t **const buttons[] = {
         &s_lvgl.pause_button,
         &s_lvgl.stop_cycle_button,
+        NULL,
         NULL,
     };
     lv_obj_t **const button_labels[] = {
         &s_lvgl.pause_button_label,
         &s_lvgl.stop_cycle_button_label,
         NULL,
+        NULL,
     };
-    for (uint8_t index = 0; index < 3; index++) {
-        lv_obj_t *button = lv_button_create(parent);
+    lv_obj_t *container = lv_obj_create(parent);
+    lv_obj_remove_style_all(container);
+    lv_obj_set_size(container, OSC_ACTION_PANEL_WIDTH, OSC_ACTION_BUTTON_HEIGHT + 8);
+    lv_obj_set_pos(container, OSC_ACTION_PANEL_X, OSC_ACTION_BUTTON_Y - 4);
+    lv_obj_set_scroll_dir(container, LV_DIR_HOR);
+    lv_obj_set_scrollbar_mode(container, LV_SCROLLBAR_MODE_ACTIVE);
+    lv_obj_set_style_pad_all(container, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, LV_PART_MAIN);
+
+    for (uint8_t index = 0; index < 4; index++) {
+        lv_obj_t *button = lv_button_create(container);
         lv_obj_set_size(button, OSC_ACTION_BUTTON_WIDTH, OSC_ACTION_BUTTON_HEIGHT);
-        lv_obj_set_pos(button, OSC_ACTION_PANEL_X + OSC_ACTION_BUTTON_GAP +
-                                index * (OSC_ACTION_BUTTON_WIDTH + OSC_ACTION_BUTTON_GAP),
-                       OSC_ACTION_BUTTON_Y);
+        lv_obj_set_pos(button, OSC_ACTION_BUTTON_GAP + index * (OSC_ACTION_BUTTON_WIDTH + OSC_ACTION_BUTTON_GAP), 4);
         lv_obj_set_style_border_width(button, 1, LV_PART_MAIN);
         lv_obj_set_style_border_color(button, lv_color_hex(0x606060), LV_PART_MAIN);
         lv_obj_set_style_radius(button, 5, LV_PART_MAIN);
@@ -1689,6 +1714,12 @@ void osc_set_lcd(wt32s3_lcd_handle_t lcd)
 void osc_set_menu_callback(osc_menu_callback_t callback)
 {
     s_menu_callback = callback;
+}
+
+/** @brief Define a ação executada ao encerrar manualmente o ciclo. */
+void osc_set_cycle_finished_callback(osc_cycle_finished_callback_t callback)
+{
+    s_cycle_finished_callback = callback;
 }
 
 /** @brief Destrói a tela do osciloscópio, seus timers e buffers de histórico. */
