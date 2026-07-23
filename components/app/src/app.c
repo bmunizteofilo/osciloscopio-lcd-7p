@@ -20,6 +20,7 @@
 #include "date_time.h"
 #include "general_settings.h"
 #include "report_storage.h"
+#include "acquisition_stream.h"
 
 #define APP_I2C_SCL_GPIO DRIVER_GPIO_NUM_47
 #define APP_I2C_SDA_GPIO DRIVER_GPIO_NUM_48
@@ -41,9 +42,6 @@
 #define APP_SPI_PROTOCOL_VERSION 0x02
 #define APP_SPI_ALIVE_TRANSACTION_SIZE 4
 #define APP_SPI_SYNC_TIMEOUT_MS 100
-#define APP_SPI_TEST_ACQUISITION_ENABLED 1
-#define APP_SPI_TEST_LOG_PERIOD_MS 3000
-#define APP_SPI_TEST_PROFILE 0
 #define APP_SPI_REQUEST_SIZE 4
 #define APP_SPI_RESPONSE_PREFIX_SIZE 1
 #define APP_SPI_BLOCK_HEADER_SIZE 4
@@ -51,6 +49,7 @@
 #define APP_SPI_MAX_RESPONSE_SIZE (APP_SPI_RESPONSE_PREFIX_SIZE + APP_SPI_BLOCK_HEADER_SIZE + APP_SPI_MAX_BLOCK_PAYLOAD_SIZE)
 #define APP_SPI_OPCODE_CONFIG_PROFILE 0x01
 #define APP_SPI_OPCODE_START 0x02
+#define APP_SPI_OPCODE_STOP 0x03
 #define APP_SPI_OPCODE_READ_BLOCK 0x10
 #define APP_SPI_RESULT_OK 0x00
 #define APP_SPI_RETRY_PERIOD_MS 5000
@@ -267,15 +266,15 @@ static esp_err_t app_spi_execute_command(driver_spi_device_handle_t device, uint
 }
 
 /**
- * @brief Configura e inicia a aquisição ADC da STM32 para o teste SPI.
+ * @brief Configura e inicia a aquisição ADC da STM32 para o osciloscópio.
  *
  * @param[in] device Dispositivo SPI da STM32.
  * @return ESP_OK se a STM confirmou configuração e início.
  */
-static esp_err_t app_spi_start_test_acquisition(driver_spi_device_handle_t device)
+static esp_err_t app_spi_start_acquisition(driver_spi_device_handle_t device, uint8_t profile)
 {
     ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_CONFIG_PROFILE,
-                                                APP_SPI_TEST_PROFILE, 0, 0, 1),
+                                                profile, 0, 0, 1),
                         TAG, "falha ao configurar perfil SPI");
     ESP_RETURN_ON_FALSE(s_spi_response_rx[1] == APP_SPI_RESULT_OK, ESP_FAIL, TAG,
                         "STM recusou perfil SPI: %02X", s_spi_response_rx[1]);
@@ -294,11 +293,29 @@ static esp_err_t app_spi_start_test_acquisition(driver_spi_device_handle_t devic
  * @param[out] out_sequence Sequência do bloco recebido.
  * @return ESP_OK em sucesso ou erro de protocolo.
  */
-static esp_err_t app_spi_read_test_block(driver_spi_device_handle_t device, uint8_t *out_sequence)
+static esp_err_t app_spi_stop_acquisition(driver_spi_device_handle_t device)
 {
-    ESP_RETURN_ON_FALSE(out_sequence != NULL, ESP_ERR_INVALID_ARG, TAG, "sequencia de bloco invalida");
+    ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_STOP, 0, 0, 0, 1), TAG,
+                        "falha ao parar aquisicao SPI");
+    ESP_RETURN_ON_FALSE(s_spi_response_rx[1] == APP_SPI_RESULT_OK, ESP_FAIL, TAG,
+                        "STM recusou parada SPI: %02X", s_spi_response_rx[1]);
+    return ESP_OK;
+}
+
+/**
+ * @brief Lê um bloco ADC pronto e o publica para o consumidor no core 1.
+ *
+ * @param[in] device Dispositivo SPI da STM32.
+ * @param[in] expected_profile Perfil que determinou o tamanho esperado do bloco.
+ * @return ESP_OK em sucesso ou erro de protocolo.
+ */
+static esp_err_t app_spi_read_block(driver_spi_device_handle_t device, uint8_t expected_profile)
+{
+    static const uint16_t frames_per_profile[] = {256U, 128U, 64U, 16U};
+    ESP_RETURN_ON_FALSE(expected_profile < 4U, ESP_ERR_INVALID_ARG, TAG, "perfil SPI invalido");
+    const uint16_t expected_frames = frames_per_profile[expected_profile];
     ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_READ_BLOCK, 0, 0, 0,
-                                                APP_SPI_BLOCK_HEADER_SIZE + APP_SPI_MAX_BLOCK_PAYLOAD_SIZE),
+                                                APP_SPI_BLOCK_HEADER_SIZE + expected_frames * 8U),
                         TAG, "falha ao solicitar bloco SPI");
 
     const uint8_t sequence = s_spi_response_rx[1];
@@ -306,10 +323,18 @@ static esp_err_t app_spi_read_test_block(driver_spi_device_handle_t device, uint
     const uint16_t frame_count = (uint16_t)s_spi_response_rx[3] |
                                  ((uint16_t)s_spi_response_rx[4] << 8U);
     const size_t payload_length = (size_t)frame_count * 8U;
-    ESP_RETURN_ON_FALSE(profile <= 3U && payload_length <= APP_SPI_MAX_BLOCK_PAYLOAD_SIZE,
+    ESP_RETURN_ON_FALSE(profile == expected_profile && frame_count == expected_frames &&
+                            payload_length <= APP_SPI_MAX_BLOCK_PAYLOAD_SIZE,
                         ESP_ERR_INVALID_RESPONSE, TAG, "cabecalho de bloco invalido");
-
-    *out_sequence = sequence;
+    acquisition_stream_block_t block = {
+        .sequence = sequence,
+        .profile = profile,
+        .frame_count = frame_count,
+        .payload_length = (uint16_t)payload_length,
+    };
+    memcpy(block.payload, &s_spi_response_rx[5], payload_length);
+    ESP_RETURN_ON_FALSE(acquisition_stream_publish(&block), ESP_ERR_NO_MEM, TAG,
+                        "fila de blocos SPI cheia");
     return ESP_OK;
 }
 
@@ -321,55 +346,48 @@ static esp_err_t app_spi_read_test_block(driver_spi_device_handle_t device, uint
 static void app_spi_acquisition_task(void *argument)
 {
     app_spi_context_t *context = argument;
-#if APP_SPI_TEST_ACQUISITION_ENABLED
     if (driver_gpio_config_input_any_edge_interrupt(APP_SPI_DRV_GPIO, app_spi_drv_isr, NULL, false) != ESP_OK) {
         ESP_LOGE(TAG, "falha ao configurar DRV SPI");
         vTaskDelete(NULL);
         return;
     }
-    if (app_spi_start_test_acquisition(context->device) != ESP_OK) {
-        ESP_LOGE(TAG, "falha ao iniciar aquisicao SPI de teste");
-        vTaskDelete(NULL);
-        return;
-    }
-    ESP_LOGI(TAG, "Teste SPI ativo; aguardando blocos no GPIO DRV");
-
-    uint8_t previous_sequence = 0;
-    bool has_previous_sequence = false;
-    uint32_t received_blocks = 0;
-    uint32_t lost_blocks = 0;
-    TickType_t last_log = xTaskGetTickCount();
+    acquisition_stream_set_spi_task(xTaskGetCurrentTaskHandle());
+    bool capturing = false;
+    uint8_t active_profile = 0;
     for (;;) {
-        bool data_ready = false;
-        if (driver_gpio_get_level(APP_SPI_DRV_GPIO, &data_ready) == ESP_OK && data_ready) {
-            uint8_t sequence = 0;
-            if (app_spi_read_test_block(context->device, &sequence) != ESP_OK) {
-                ESP_LOGW(TAG, "falha ao ler bloco SPI de teste");
-            } else {
-                if (has_previous_sequence) {
-                    lost_blocks += (uint8_t)(sequence - previous_sequence - 1U);
+        acquisition_stream_command_t command;
+        while (acquisition_stream_take_command(&command)) {
+            if (command.type == ACQUISITION_STREAM_COMMAND_STOP) {
+                if (capturing && app_spi_stop_acquisition(context->device) != ESP_OK) {
+                    ESP_LOGW(TAG, "falha ao parar aquisicao SPI");
                 }
-                previous_sequence = sequence;
-                has_previous_sequence = true;
-                received_blocks++;
+                capturing = false;
+                acquisition_stream_clear();
+            } else if (command.type == ACQUISITION_STREAM_COMMAND_START && command.profile < 4U) {
+                if (capturing) {
+                    (void)app_spi_stop_acquisition(context->device);
+                }
+                acquisition_stream_clear();
+                if (app_spi_start_acquisition(context->device, command.profile) == ESP_OK) {
+                    active_profile = command.profile;
+                    capturing = true;
+                    ESP_LOGI(TAG, "Aquisicao SPI iniciada no perfil %u", active_profile);
+                } else {
+                    capturing = false;
+                    ESP_LOGE(TAG, "falha ao iniciar aquisicao SPI");
+                }
             }
         }
-        if ((xTaskGetTickCount() - last_log) >= pdMS_TO_TICKS(APP_SPI_TEST_LOG_PERIOD_MS)) {
-            ESP_LOGI(TAG, "SPI teste (3 s): recebidos=%u perdidos=%u", received_blocks, lost_blocks);
-            received_blocks = 0;
-            lost_blocks = 0;
-            last_log = xTaskGetTickCount();
+        bool data_ready = false;
+        if (capturing && acquisition_stream_has_space() &&
+            driver_gpio_get_level(APP_SPI_DRV_GPIO, &data_ready) == ESP_OK && data_ready) {
+            if (app_spi_read_block(context->device, active_profile) != ESP_OK) {
+                ESP_LOGW(TAG, "falha ao ler bloco SPI");
+            }
+            continue;
         }
-        if (!data_ready) {
-            (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
-        }
+        (void)ulTaskNotifyTake(pdTRUE, capturing ? pdMS_TO_TICKS(1) : portMAX_DELAY);
     }
-#else
-    (void)context;
-    for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-#endif
 }
 
 /**
@@ -382,7 +400,7 @@ static void app_spi_supervisor_task(void *argument)
     app_spi_context_t *context = argument;
     for (;;) {
         if (app_spi_alive(context->device) == ESP_OK) {
-            ESP_LOGI(TAG, "Placa STM32 detectada; iniciando aquisicao SPI");
+            ESP_LOGI(TAG, "Placa STM32 detectada; aguardando comando de aquisicao");
             BaseType_t created = xTaskCreatePinnedToCore(app_spi_acquisition_task, "spi_acq",
                                                          APP_SPI_ACQUISITION_STACK_SIZE, context,
                                                          APP_SPI_ACQUISITION_PRIORITY,
@@ -428,6 +446,7 @@ esp_err_t app_init(void)
         nvs_err = nvs_flash_init();
     }
     ESP_RETURN_ON_ERROR(nvs_err, TAG, "falha ao inicializar NVS");
+    acquisition_stream_init();
     ESP_RETURN_ON_ERROR(report_storage_init(), TAG, "falha ao iniciar armazenamento de relatorios");
     driver_i2c_bus_handle_t i2c_bus = NULL;
     ESP_RETURN_ON_ERROR(app_i2c_init(&i2c_bus), TAG, "falha ao inicializar I2C");

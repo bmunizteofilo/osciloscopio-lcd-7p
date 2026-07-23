@@ -1806,6 +1806,9 @@ lv_obj_t *osc_get_screen(void)
 esp_err_t osc_set_input_sample_rate(uint32_t sample_rate_hz)
 {
     ESP_RETURN_ON_FALSE(sample_rate_hz > 0, ESP_ERR_INVALID_ARG, TAG, "taxa de amostragem invalida");
+    if (s_lvgl.input_sample_rate_hz == sample_rate_hz) {
+        return ESP_OK;
+    }
     s_lvgl.input_sample_rate_hz = sample_rate_hz;
     if (s_lvgl.waveform_renderer != NULL) {
         lv_obj_invalidate(s_lvgl.waveform_renderer);
@@ -1829,4 +1832,40 @@ esp_err_t osc_push_frame(const uint16_t samples[4])
     osc_update_buffer_label();
     lv_obj_invalidate(s_lvgl.waveform_renderer);
     return ESP_OK;
+}
+
+/**
+ * @brief Insere vários frames no histórico e solicita um único redesenho.
+ */
+esp_err_t osc_push_frames(const uint16_t (*frames)[4], size_t frame_count)
+{
+    ESP_RETURN_ON_FALSE(frames != NULL || frame_count == 0, ESP_ERR_INVALID_ARG, TAG, "frames ADC invalidos");
+    if (s_lvgl.paused || s_lvgl.waveform_renderer == NULL) {
+        return ESP_OK;
+    }
+    for (size_t index = 0; index < frame_count; index++) {
+        osc_waveform_push_samples(frames[index]);
+    }
+    if (frame_count > 0) {
+        osc_update_buffer_label();
+        lv_obj_invalidate(s_lvgl.waveform_renderer);
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief Retorna o perfil ADC adequado à base de tempo atualmente selecionada.
+ */
+uint8_t osc_get_acquisition_profile(void)
+{
+    if (s_lvgl.time_base_us_per_div <= 5000U) {
+        return 0U;
+    }
+    if (s_lvgl.time_base_us_per_div <= 10000U) {
+        return 1U;
+    }
+    if (s_lvgl.time_base_us_per_div <= 100000U) {
+        return 2U;
+    }
+    return 3U;
 }

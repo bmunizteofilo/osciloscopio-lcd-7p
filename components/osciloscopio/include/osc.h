@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stddef.h>
+
 #include "esp_err.h"
 #include "lvgl.h"
 #include "wt32s3_lcd.h"
@@ -81,6 +83,22 @@ esp_err_t osc_set_input_sample_rate(uint32_t sample_rate_hz);
  * @return @c ESP_OK em caso de sucesso ou @c ESP_ERR_INVALID_ARG se @p samples for nulo.
  */
 esp_err_t osc_push_frame(const uint16_t samples[4]);
+
+/**
+ * @brief Insere vários frames no histórico e solicita um único redesenho.
+ *
+ * @param[in] frames Frames consecutivos na ordem CH1, CH2, CH3 e CH4.
+ * @param[in] frame_count Quantidade de frames em @p frames.
+ * @return ESP_OK em sucesso.
+ */
+esp_err_t osc_push_frames(const uint16_t (*frames)[4], size_t frame_count);
+
+/**
+ * @brief Retorna o perfil ADC adequado à base de tempo atualmente selecionada.
+ *
+ * @return Perfil de 0 (FAST) a 3 (VERY_SLOW).
+ */
+uint8_t osc_get_acquisition_profile(void);
 
 #ifdef __cplusplus
 }

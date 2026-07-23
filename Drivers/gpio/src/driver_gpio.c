@@ -19,6 +19,8 @@ typedef struct {
 
 /** @brief Contextos persistentes acessados pelas ISRs de GPIO. */
 static driver_gpio_edge_context_t s_edge_contexts[DRIVER_GPIO_MAX_NUMBER + 1];
+/** @brief Indica que o servico global de interrupcoes GPIO ja esta disponivel. */
+static bool s_isr_service_installed;
 
 /**
  * @brief Encaminha a interrupção de mudança de nível ao cliente registrado.
@@ -93,9 +95,12 @@ esp_err_t driver_gpio_config_input_any_edge_interrupt(driver_gpio_num_t gpio,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&config), TAG, "falha ao configurar interrupcao GPIO");
 
-    esp_err_t err = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        return err;
+    if (!s_isr_service_installed) {
+        esp_err_t err = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            return err;
+        }
+        s_isr_service_installed = true;
     }
 
     driver_gpio_edge_context_t *context = &s_edge_contexts[gpio];

@@ -14,6 +14,7 @@
 #include "osc.h"
 #include "general_settings.h"
 #include "report_storage.h"
+#include "acquisition_stream.h"
 
 #define UI_FLOW_SPLASH_DURATION_MS 5000U
 #define UI_FLOW_SPLASH_BAR_RADIUS 15
@@ -2259,6 +2260,9 @@ static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
     }
     date_time_format_time(s_ui_flow.test_start_time, sizeof(s_ui_flow.test_start_time));
     memset(s_ui_flow.test_end_time, 0, sizeof(s_ui_flow.test_end_time));
+    if (!acquisition_stream_request_start(osc_get_acquisition_profile())) {
+        ESP_LOGW("ui_flow", "nao foi possivel solicitar inicio da aquisicao SPI");
+    }
     lv_screen_load_anim(osc_get_screen(), LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
 
@@ -2342,6 +2346,7 @@ static void ui_flow_automatic_test_start_cb(lv_event_t *event)
 /** @brief Retorna do osciloscópio ao menu sem destruir sua tela persistente. */
 static void ui_flow_oscilloscope_menu_cb(void)
 {
+    (void)acquisition_stream_request_stop();
     s_ui_flow.preserve_oscilloscope_screen = true;
     ui_flow_show_main_menu();
     osc_destroy();
@@ -2548,6 +2553,7 @@ static void ui_flow_show_ready_to_start(void)
 /** @brief Cria, preenche e carrega a tela de conclusão temporária do ciclo. */
 static void ui_flow_show_cycle_finished(void)
 {
+    (void)acquisition_stream_request_stop();
     memset(&guider_ui.screen_ciclo_finalizado, 0, sizeof(guider_ui.screen_ciclo_finalizado));
     setup_screen_ciclo_finalizado(&guider_ui);
     if (guider_ui.screen_ciclo_finalizado.screen == NULL) {
