@@ -270,7 +270,7 @@ static int32_t ui_flow_manual_get_min(ui_flow_manual_setting_t setting)
     case UI_FLOW_MANUAL_PULSE: return 1;
     case UI_FLOW_MANUAL_CYCLES: return 0;
     case UI_FLOW_MANUAL_RPM: return 500;
-    case UI_FLOW_MANUAL_PAUSE: return 100;
+    case UI_FLOW_MANUAL_PAUSE: return 0;
     case UI_FLOW_MANUAL_TEMPERATURE: return 25;
     default: return 0;
     }

@@ -324,7 +324,7 @@ static esp_err_t app_spi_validate_pwm_config(const acquisition_stream_start_conf
     ESP_RETURN_ON_FALSE((uint32_t)config->ton_ms * 1000U <= maximum_ton_us, ESP_ERR_INVALID_ARG, TAG,
                         "Ton PWM excede limite serial: ton=%u ms rpm=%u", (unsigned)config->ton_ms,
                         (unsigned)config->rpm);
-    ESP_RETURN_ON_FALSE(config->pause_ms >= 100U && config->pause_ms <= 10000U, ESP_ERR_INVALID_ARG, TAG,
+    ESP_RETURN_ON_FALSE(config->pause_ms <= 10000U, ESP_ERR_INVALID_ARG, TAG,
                         "pausa PWM invalida: %u ms", (unsigned)config->pause_ms);
     if (config->operation_mode == 0U) {
         ESP_RETURN_ON_FALSE(config->cycles >= 1U, ESP_ERR_INVALID_ARG, TAG,
