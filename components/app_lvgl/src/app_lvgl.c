@@ -80,6 +80,10 @@ static void app_lvgl_consume_acquisition(void)
             }
         }
         (void)osc_push_frames(s_acquisition_frames, block.frame_count);
+        if (block.cycle_done) {
+            osc_notify_cycle_done();
+            break;
+        }
     }
 }
 

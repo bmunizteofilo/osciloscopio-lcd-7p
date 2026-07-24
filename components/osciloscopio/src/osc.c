@@ -1643,7 +1643,7 @@ static void osc_cycle_finished_button_event_cb(lv_event_t *event)
 {
     (void)event;
     if (s_cycle_finished_callback != NULL) {
-        s_cycle_finished_callback();
+        s_cycle_finished_callback(false);
     }
 }
 
@@ -1885,6 +1885,14 @@ void osc_set_menu_callback(osc_menu_callback_t callback)
 void osc_set_cycle_finished_callback(osc_cycle_finished_callback_t callback)
 {
     s_cycle_finished_callback = callback;
+}
+
+/** @brief Notifica que a STM32 concluiu uma execução PWM finita. */
+void osc_notify_cycle_done(void)
+{
+    if (s_cycle_finished_callback != NULL) {
+        s_cycle_finished_callback(true);
+    }
 }
 
 /** @brief Destrói a tela do osciloscópio, seus timers e buffers de histórico. */

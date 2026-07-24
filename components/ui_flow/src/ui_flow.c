@@ -39,6 +39,12 @@ typedef enum {
     UI_FLOW_INJECTOR_75V_GDI
 } ui_flow_injector_type_t;
 
+/** @brief Receita identificada de um teste automático futuro. */
+typedef struct {
+    const char *description;
+    uint8_t operation_mode;
+} ui_flow_automatic_test_t;
+
 /** @brief Identificadores estáveis dos cards que podem ocupar os slots do menu. */
 typedef enum {
     UI_FLOW_MENU_CLEANING,
@@ -145,6 +151,7 @@ typedef struct {
     int32_t manual_pause;
     int32_t manual_temperature;
     ui_flow_injector_type_t injector_type;
+    uint8_t automatic_operation_mode;
 } ui_flow_context_t;
 
 /** @brief Estado persistente da splash e de sua transição. */
@@ -260,8 +267,8 @@ static int32_t ui_flow_manual_get_min(ui_flow_manual_setting_t setting)
 {
     switch (setting) {
     case UI_FLOW_MANUAL_PRESSURE:
-    case UI_FLOW_MANUAL_PULSE:
-    case UI_FLOW_MANUAL_CYCLES: return 1;
+    case UI_FLOW_MANUAL_PULSE: return 1;
+    case UI_FLOW_MANUAL_CYCLES: return 0;
     case UI_FLOW_MANUAL_RPM: return 500;
     case UI_FLOW_MANUAL_PAUSE: return 100;
     case UI_FLOW_MANUAL_TEMPERATURE: return 25;
@@ -437,9 +444,10 @@ static void ui_flow_cycle_finished_populate_info(void)
 }
 
 /** @brief Finaliza a demonstração temporária e abre o resumo do ciclo. */
-static void ui_flow_oscilloscope_cycle_finished_cb(void)
+static void ui_flow_oscilloscope_cycle_finished_cb(bool pwm_completed)
 {
     date_time_format_time(s_ui_flow.test_end_time, sizeof(s_ui_flow.test_end_time));
+    (void)acquisition_stream_request_stop(!pwm_completed);
     ui_flow_show_cycle_finished();
 }
 
@@ -2244,6 +2252,22 @@ void ui_flow_handle_multitouch(const gt911_touch_data_t *touch_data)
     }
 }
 
+/** @brief Monta os parâmetros PWM a partir do fluxo e ajustes atualmente selecionados. */
+static acquisition_stream_start_config_t ui_flow_build_acquisition_config(void)
+{
+    const bool automatic = s_ui_flow.automatic_operation_mode >= 2U;
+    const uint8_t operation_mode = automatic ? s_ui_flow.automatic_operation_mode :
+                                   (s_ui_flow.manual_cycles == 0 ? 0U : 1U);
+    return (acquisition_stream_start_config_t){
+        .profile = osc_get_acquisition_profile(),
+        .rpm = (uint16_t)s_ui_flow.manual_rpm,
+        .ton_ms = (uint8_t)s_ui_flow.manual_pulse,
+        .cycles = (uint16_t)(operation_mode == 0U ? 1 : s_ui_flow.manual_cycles),
+        .pause_ms = (uint16_t)s_ui_flow.manual_pause,
+        .operation_mode = operation_mode,
+    };
+}
+
 /**
  * @brief Cria sob demanda e carrega a tela do osciloscópio.
  *
@@ -2266,7 +2290,8 @@ static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
     }
     date_time_format_time(s_ui_flow.test_start_time, sizeof(s_ui_flow.test_start_time));
     memset(s_ui_flow.test_end_time, 0, sizeof(s_ui_flow.test_end_time));
-    if (!acquisition_stream_request_start(osc_get_acquisition_profile())) {
+    const acquisition_stream_start_config_t config = ui_flow_build_acquisition_config();
+    if (!acquisition_stream_request_start(&config)) {
         ESP_LOGW("ui_flow", "nao foi possivel solicitar inicio da aquisicao SPI");
     }
     lv_screen_load_anim(osc_get_screen(), LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
@@ -2309,6 +2334,7 @@ static void ui_flow_injector_type_button_cb(lv_event_t *event)
 static void ui_flow_bicos_manual_button_cb(lv_event_t *event)
 {
     (void)event;
+    s_ui_flow.automatic_operation_mode = 0;
     ui_flow_show_bicos_config_manual();
 }
 
@@ -2340,11 +2366,12 @@ static void ui_flow_automatic_tests_more_button_cb(lv_event_t *event)
  */
 static void ui_flow_automatic_test_start_cb(lv_event_t *event)
 {
-    const char *test_description = lv_event_get_user_data(event);
-    if (test_description != NULL) {
-        strncpy(s_ui_flow.selected_test_description, test_description,
+    const ui_flow_automatic_test_t *test = lv_event_get_user_data(event);
+    if (test != NULL) {
+        strncpy(s_ui_flow.selected_test_description, test->description,
                 sizeof(s_ui_flow.selected_test_description) - 1U);
         s_ui_flow.selected_test_description[sizeof(s_ui_flow.selected_test_description) - 1U] = '\0';
+        s_ui_flow.automatic_operation_mode = test->operation_mode;
     }
     ui_flow_oscilloscope_button_cb(event);
 }
@@ -2352,7 +2379,7 @@ static void ui_flow_automatic_test_start_cb(lv_event_t *event)
 /** @brief Retorna do osciloscópio ao menu sem destruir sua tela persistente. */
 static void ui_flow_oscilloscope_menu_cb(void)
 {
-    (void)acquisition_stream_request_stop();
+    (void)acquisition_stream_request_stop(true);
     s_ui_flow.preserve_oscilloscope_screen = true;
     ui_flow_show_main_menu();
     osc_destroy();
@@ -2559,7 +2586,6 @@ static void ui_flow_show_ready_to_start(void)
 /** @brief Cria, preenche e carrega a tela de conclusão temporária do ciclo. */
 static void ui_flow_show_cycle_finished(void)
 {
-    (void)acquisition_stream_request_stop();
     memset(&guider_ui.screen_ciclo_finalizado, 0, sizeof(guider_ui.screen_ciclo_finalizado));
     setup_screen_ciclo_finalizado(&guider_ui);
     if (guider_ui.screen_ciclo_finalizado.screen == NULL) {
@@ -3102,14 +3128,19 @@ static void ui_flow_show_automatic_tests(void)
         guider_ui.screen_testes_automaticos.button_leque_vazao_equa,
         guider_ui.screen_testes_automaticos.button_auto
     };
-    static const char *const test_descriptions[] = {
-        "Teste Leque", "Equalizacao de Vazao", "Equalizacao Vazao/Temperatura",
-        "Teste de Estanqueidade", "Teste em Rotacoes", "Leque/Vazao/Equalizacao", "Automatico"
+    static const ui_flow_automatic_test_t tests[] = {
+        {.description = "Teste Leque", .operation_mode = 2},
+        {.description = "Equalizacao de Vazao", .operation_mode = 3},
+        {.description = "Equalizacao Vazao/Temperatura", .operation_mode = 4},
+        {.description = "Teste de Estanqueidade", .operation_mode = 5},
+        {.description = "Teste em Rotacoes", .operation_mode = 6},
+        {.description = "Leque/Vazao/Equalizacao", .operation_mode = 7},
+        {.description = "Automatico", .operation_mode = 8},
     };
     for (uint32_t index = 0; index < sizeof(test_buttons) / sizeof(test_buttons[0]); index++) {
         if (test_buttons[index] != NULL) {
             lv_obj_add_event_cb(test_buttons[index], ui_flow_automatic_test_start_cb,
-                                LV_EVENT_CLICKED, (void *)test_descriptions[index]);
+                                LV_EVENT_CLICKED, (void *)&tests[index]);
         }
     }
     if (guider_ui.screen_testes_automaticos.button_mais != NULL) {
@@ -3140,13 +3171,14 @@ static void ui_flow_show_automatic_tests_second_page(void)
         guider_ui.screen_testes_automaticos_2.button_leque_vazao_equa,
         guider_ui.screen_testes_automaticos_2.button_teste_circulacao
     };
-    static const char *const test_descriptions[] = {
-        "Leque/Vazao/Equalizacao", "Teste de Circulacao"
+    static const ui_flow_automatic_test_t tests[] = {
+        {.description = "Leque/Vazao/Equalizacao", .operation_mode = 9},
+        {.description = "Teste de Circulacao", .operation_mode = 10},
     };
     for (uint32_t index = 0; index < sizeof(test_buttons) / sizeof(test_buttons[0]); index++) {
         if (test_buttons[index] != NULL) {
             lv_obj_add_event_cb(test_buttons[index], ui_flow_automatic_test_start_cb,
-                                LV_EVENT_CLICKED, (void *)test_descriptions[index]);
+                                LV_EVENT_CLICKED, (void *)&tests[index]);
         }
     }
     lv_screen_load_anim(guider_ui.screen_testes_automaticos_2.screen,

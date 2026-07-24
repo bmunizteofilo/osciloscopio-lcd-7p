@@ -21,8 +21,8 @@ void osc_set_lcd(wt32s3_lcd_handle_t lcd);
 
 /** @brief Função chamada pelo botão Menu do osciloscópio. */
 typedef void (*osc_menu_callback_t)(void);
-/** @brief Função chamada pelo botão Terminar Ciclo do osciloscópio. */
-typedef void (*osc_cycle_finished_callback_t)(void);
+/** @brief Função chamada quando um ciclo é finalizado pelo usuário ou pela STM32. */
+typedef void (*osc_cycle_finished_callback_t)(bool pwm_completed);
 
 /**
  * @brief Define a ação executada pelo botão Menu do osciloscópio.
@@ -37,6 +37,9 @@ void osc_set_menu_callback(osc_menu_callback_t callback);
  * @param[in] callback Função de retorno para o resumo do ciclo.
  */
 void osc_set_cycle_finished_callback(osc_cycle_finished_callback_t callback);
+
+/** @brief Notifica que a STM32 concluiu uma execução PWM finita. */
+void osc_notify_cycle_done(void);
 
 /**
  * @brief Cria a interface do osciloscópio.

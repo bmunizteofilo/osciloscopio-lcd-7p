@@ -39,18 +39,23 @@
 #define APP_SPI_READ_RESPONSE_COMMAND 0x80
 #define APP_SPI_ALIVE_MAGIC_0 0xa5
 #define APP_SPI_ALIVE_MAGIC_1 0x5a
-#define APP_SPI_PROTOCOL_VERSION 0x02
+#define APP_SPI_PROTOCOL_VERSION 0x03
 #define APP_SPI_ALIVE_TRANSACTION_SIZE 4
 #define APP_SPI_SYNC_TIMEOUT_MS 100
 #define APP_SPI_REQUEST_SIZE 4
 #define APP_SPI_RESPONSE_PREFIX_SIZE 1
-#define APP_SPI_BLOCK_HEADER_SIZE 4
+#define APP_SPI_BLOCK_HEADER_SIZE 5
 #define APP_SPI_MAX_BLOCK_PAYLOAD_SIZE 2048
 #define APP_SPI_MAX_RESPONSE_SIZE (APP_SPI_RESPONSE_PREFIX_SIZE + APP_SPI_BLOCK_HEADER_SIZE + APP_SPI_MAX_BLOCK_PAYLOAD_SIZE)
 #define APP_SPI_OPCODE_CONFIG_PROFILE 0x01
 #define APP_SPI_OPCODE_START 0x02
 #define APP_SPI_OPCODE_STOP 0x03
 #define APP_SPI_OPCODE_READ_BLOCK 0x10
+#define APP_SPI_OPCODE_PWM_CONFIG_0 0x20
+#define APP_SPI_OPCODE_PWM_CONFIG_1 0x21
+#define APP_SPI_OPCODE_PWM_CONFIG_2 0x22
+#define APP_SPI_OPCODE_PWM_START 0x23
+#define APP_SPI_OPCODE_PWM_STOP 0x24
 #define APP_SPI_RESULT_OK 0x00
 #define APP_SPI_RETRY_PERIOD_MS 5000
 #define APP_SPI_SUPERVISOR_STACK_SIZE 3072
@@ -303,6 +308,85 @@ static esp_err_t app_spi_stop_acquisition(driver_spi_device_handle_t device)
 }
 
 /**
+ * @brief Valida os limites elétricos e de serialização dos quatro bicos.
+ *
+ * @param[in] config Parâmetros PWM recebidos da interface.
+ * @return ESP_OK se os parâmetros puderem ser enviados à STM32.
+ */
+static esp_err_t app_spi_validate_pwm_config(const acquisition_stream_start_config_t *config)
+{
+    ESP_RETURN_ON_FALSE(config != NULL, ESP_ERR_INVALID_ARG, TAG, "configuracao PWM nula");
+    ESP_RETURN_ON_FALSE(config->rpm >= 1U && config->rpm <= 10000U, ESP_ERR_INVALID_ARG, TAG,
+                        "RPM PWM invalido: %u", (unsigned)config->rpm);
+    ESP_RETURN_ON_FALSE(config->ton_ms >= 1U && config->ton_ms <= 35U, ESP_ERR_INVALID_ARG, TAG,
+                        "Ton PWM invalido: %u", (unsigned)config->ton_ms);
+    const uint32_t maximum_ton_us = 30000000U / config->rpm;
+    ESP_RETURN_ON_FALSE((uint32_t)config->ton_ms * 1000U <= maximum_ton_us, ESP_ERR_INVALID_ARG, TAG,
+                        "Ton PWM excede limite serial: ton=%u ms rpm=%u", (unsigned)config->ton_ms,
+                        (unsigned)config->rpm);
+    ESP_RETURN_ON_FALSE(config->pause_ms >= 100U && config->pause_ms <= 10000U, ESP_ERR_INVALID_ARG, TAG,
+                        "pausa PWM invalida: %u ms", (unsigned)config->pause_ms);
+    if (config->operation_mode == 0U) {
+        ESP_RETURN_ON_FALSE(config->cycles >= 1U, ESP_ERR_INVALID_ARG, TAG,
+                            "contador PWM manual invalido");
+    } else {
+        ESP_RETURN_ON_FALSE(config->cycles >= 1U && config->cycles <= 10000U, ESP_ERR_INVALID_ARG, TAG,
+                            "ciclos PWM invalidos: %u", (unsigned)config->cycles);
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief Envia uma configuração PWM em uma transação e valida sua resposta.
+ */
+static esp_err_t app_spi_send_pwm_config(driver_spi_device_handle_t device, uint8_t opcode,
+                                         uint8_t argument_0, uint8_t argument_1, uint8_t argument_2)
+{
+    ESP_RETURN_ON_ERROR(app_spi_execute_command(device, opcode, argument_0, argument_1, argument_2, 1), TAG,
+                        "falha ao configurar PWM");
+    ESP_RETURN_ON_FALSE(s_spi_response_rx[1] == APP_SPI_RESULT_OK, ESP_FAIL, TAG,
+                        "STM recusou configuracao PWM %02X: %02X", opcode, s_spi_response_rx[1]);
+    return ESP_OK;
+}
+
+/**
+ * @brief Configura os três registros PWM e inicia a rotina de bicos na STM32.
+ */
+static esp_err_t app_spi_start_pwm(driver_spi_device_handle_t device,
+                                   const acquisition_stream_start_config_t *config)
+{
+    ESP_RETURN_ON_ERROR(app_spi_validate_pwm_config(config), TAG, "parametros PWM invalidos");
+    ESP_RETURN_ON_ERROR(app_spi_send_pwm_config(device, APP_SPI_OPCODE_PWM_CONFIG_0,
+                                                (uint8_t)(config->rpm & 0xffU),
+                                                (uint8_t)(config->rpm >> 8U), config->ton_ms), TAG,
+                        "falha no PWM_CONFIG_0");
+    ESP_RETURN_ON_ERROR(app_spi_send_pwm_config(device, APP_SPI_OPCODE_PWM_CONFIG_1,
+                                                (uint8_t)(config->cycles & 0xffU),
+                                                (uint8_t)(config->cycles >> 8U),
+                                                (uint8_t)(config->pause_ms & 0xffU)), TAG,
+                        "falha no PWM_CONFIG_1");
+    ESP_RETURN_ON_ERROR(app_spi_send_pwm_config(device, APP_SPI_OPCODE_PWM_CONFIG_2,
+                                                (uint8_t)(config->pause_ms >> 8U),
+                                                config->operation_mode, 0), TAG,
+                        "falha no PWM_CONFIG_2");
+    ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_PWM_START, 0, 0, 0, 1), TAG,
+                        "falha ao iniciar PWM");
+    ESP_RETURN_ON_FALSE(s_spi_response_rx[1] == APP_SPI_RESULT_OK, ESP_FAIL, TAG,
+                        "STM recusou inicio PWM: %02X", s_spi_response_rx[1]);
+    return ESP_OK;
+}
+
+/** @brief Para imediatamente a rotina PWM dos bicos na STM32. */
+static esp_err_t app_spi_stop_pwm(driver_spi_device_handle_t device)
+{
+    ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_PWM_STOP, 0, 0, 0, 1), TAG,
+                        "falha ao parar PWM");
+    ESP_RETURN_ON_FALSE(s_spi_response_rx[1] == APP_SPI_RESULT_OK, ESP_FAIL, TAG,
+                        "STM recusou parada PWM: %02X", s_spi_response_rx[1]);
+    return ESP_OK;
+}
+
+/**
  * @brief Lê um bloco ADC pronto e o publica para o consumidor no core 1.
  *
  * @param[in] device Dispositivo SPI da STM32.
@@ -332,7 +416,8 @@ static esp_err_t app_spi_read_block(driver_spi_device_handle_t device, uint8_t e
         .frame_count = frame_count,
         .payload_length = (uint16_t)payload_length,
     };
-    memcpy(block.payload, &s_spi_response_rx[5], payload_length);
+    block.cycle_done = s_spi_response_rx[5] == 1U;
+    memcpy(block.payload, &s_spi_response_rx[6], payload_length);
     ESP_RETURN_ON_FALSE(acquisition_stream_publish(&block), ESP_ERR_NO_MEM, TAG,
                         "fila de blocos SPI cheia");
     return ESP_OK;
@@ -358,22 +443,27 @@ static void app_spi_acquisition_task(void *argument)
         acquisition_stream_command_t command;
         while (acquisition_stream_take_command(&command)) {
             if (command.type == ACQUISITION_STREAM_COMMAND_STOP) {
+                if (command.stop_pwm && app_spi_stop_pwm(context->device) != ESP_OK) {
+                    ESP_LOGW(TAG, "falha ao parar PWM SPI");
+                }
                 if (capturing && app_spi_stop_acquisition(context->device) != ESP_OK) {
                     ESP_LOGW(TAG, "falha ao parar aquisicao SPI");
                 }
                 capturing = false;
                 acquisition_stream_clear();
-            } else if (command.type == ACQUISITION_STREAM_COMMAND_START && command.profile < 4U) {
+            } else if (command.type == ACQUISITION_STREAM_COMMAND_START && command.start_config.profile < 4U) {
                 if (capturing) {
                     (void)app_spi_stop_acquisition(context->device);
                 }
                 acquisition_stream_clear();
-                if (app_spi_start_acquisition(context->device, command.profile) == ESP_OK) {
-                    active_profile = command.profile;
+                if (app_spi_start_acquisition(context->device, command.start_config.profile) == ESP_OK &&
+                    app_spi_start_pwm(context->device, &command.start_config) == ESP_OK) {
+                    active_profile = command.start_config.profile;
                     capturing = true;
                     ESP_LOGI(TAG, "Aquisicao SPI iniciada no perfil %u", active_profile);
                 } else {
                     capturing = false;
+                    (void)app_spi_stop_acquisition(context->device);
                     ESP_LOGE(TAG, "falha ao iniciar aquisicao SPI");
                 }
             }

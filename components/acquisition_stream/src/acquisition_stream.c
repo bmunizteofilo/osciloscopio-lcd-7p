@@ -100,13 +100,12 @@ void acquisition_stream_clear(void)
 }
 
 /** @brief Enfileira e acorda a task SPI para uma solicitação de controle. */
-static bool acquisition_stream_request(acquisition_stream_command_type_t type, uint8_t profile)
+static bool acquisition_stream_request(const acquisition_stream_command_t *command)
 {
-    if (s_commands == NULL) {
+    if (s_commands == NULL || command == NULL) {
         return false;
     }
-    const acquisition_stream_command_t command = {.type = type, .profile = profile};
-    if (xQueueSend(s_commands, &command, 0) != pdPASS) {
+    if (xQueueSend(s_commands, command, 0) != pdPASS) {
         return false;
     }
     if (s_spi_task != NULL) {
@@ -116,15 +115,26 @@ static bool acquisition_stream_request(acquisition_stream_command_type_t type, u
 }
 
 /** @brief Solicita configuração e início da aquisição com um perfil ADC. */
-bool acquisition_stream_request_start(uint8_t profile)
+bool acquisition_stream_request_start(const acquisition_stream_start_config_t *config)
 {
-    return acquisition_stream_request(ACQUISITION_STREAM_COMMAND_START, profile);
+    if (config == NULL) {
+        return false;
+    }
+    const acquisition_stream_command_t command = {
+        .type = ACQUISITION_STREAM_COMMAND_START,
+        .start_config = *config,
+    };
+    return acquisition_stream_request(&command);
 }
 
 /** @brief Solicita a parada segura da aquisição. */
-bool acquisition_stream_request_stop(void)
+bool acquisition_stream_request_stop(bool stop_pwm)
 {
-    return acquisition_stream_request(ACQUISITION_STREAM_COMMAND_STOP, 0);
+    const acquisition_stream_command_t command = {
+        .type = ACQUISITION_STREAM_COMMAND_STOP,
+        .stop_pwm = stop_pwm,
+    };
+    return acquisition_stream_request(&command);
 }
 
 /** @brief Retira uma solicitação de controle na task SPI. */

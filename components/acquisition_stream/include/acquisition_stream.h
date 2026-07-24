@@ -22,10 +22,21 @@ extern "C" {
 typedef struct {
     uint8_t sequence;
     uint8_t profile;
+    bool cycle_done;
     uint16_t frame_count;
     uint16_t payload_length;
     uint8_t payload[ACQUISITION_STREAM_MAX_PAYLOAD_BYTES];
 } acquisition_stream_block_t;
+
+/** @brief Parametros PWM serializados para a placa Power Control. */
+typedef struct {
+    uint8_t profile;
+    uint16_t rpm;
+    uint8_t ton_ms;
+    uint16_t cycles;
+    uint16_t pause_ms;
+    uint8_t operation_mode;
+} acquisition_stream_start_config_t;
 
 /** @brief Comandos de controle consumidos exclusivamente pela task SPI. */
 typedef enum {
@@ -36,7 +47,8 @@ typedef enum {
 /** @brief Solicitação de controle da aquisição. */
 typedef struct {
     acquisition_stream_command_type_t type;
-    uint8_t profile;
+    acquisition_stream_start_config_t start_config;
+    bool stop_pwm;
 } acquisition_stream_command_t;
 
 /** @brief Inicializa a fila SPSC de blocos e o canal de comandos. */
@@ -63,11 +75,11 @@ bool acquisition_stream_take(acquisition_stream_block_t *out_block);
 /** @brief Descarta todos os blocos pendentes entre os dois cores. */
 void acquisition_stream_clear(void);
 
-/** @brief Solicita configuração e início da aquisição com um perfil ADC. */
-bool acquisition_stream_request_start(uint8_t profile);
+/** @brief Solicita configuração PWM e início sincronizado da aquisição. */
+bool acquisition_stream_request_start(const acquisition_stream_start_config_t *config);
 
-/** @brief Solicita a parada segura da aquisição. */
-bool acquisition_stream_request_stop(void);
+/** @brief Solicita a parada segura da aquisição e, opcionalmente, do PWM. */
+bool acquisition_stream_request_stop(bool stop_pwm);
 
 /** @brief Retira uma solicitação de controle na task SPI. */
 bool acquisition_stream_take_command(acquisition_stream_command_t *out_command);
