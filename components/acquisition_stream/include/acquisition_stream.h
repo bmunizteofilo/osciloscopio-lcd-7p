@@ -41,6 +41,7 @@ typedef struct {
 /** @brief Comandos de controle consumidos exclusivamente pela task SPI. */
 typedef enum {
     ACQUISITION_STREAM_COMMAND_START,
+    ACQUISITION_STREAM_COMMAND_RECONFIGURE_PROFILE,
     ACQUISITION_STREAM_COMMAND_STOP,
 } acquisition_stream_command_type_t;
 
@@ -77,6 +78,9 @@ void acquisition_stream_clear(void);
 
 /** @brief Solicita configuração PWM e início sincronizado da aquisição. */
 bool acquisition_stream_request_start(const acquisition_stream_start_config_t *config);
+
+/** @brief Solicita troca segura do perfil ADC sem interferir no PWM ativo. */
+bool acquisition_stream_request_profile(uint8_t profile);
 
 /** @brief Solicita a parada segura da aquisição e, opcionalmente, do PWM. */
 bool acquisition_stream_request_stop(bool stop_pwm);

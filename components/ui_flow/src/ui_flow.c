@@ -215,6 +215,14 @@ static void ui_flow_destroy_maintenance_panel(void);
 static void ui_flow_oscilloscope_menu_cb(void);
 static void ui_flow_show_general_panel(void);
 
+/** @brief Solicita à task SPI a troca de perfil ADC escolhida na base de tempo. */
+static void ui_flow_oscilloscope_profile_changed_cb(uint8_t profile)
+{
+    if (!acquisition_stream_request_profile(profile)) {
+        ESP_LOGW("ui_flow", "nao foi possivel solicitar troca de perfil ADC");
+    }
+}
+
 /** @brief Cancela a transição temporária do osciloscópio para o resumo do ciclo. */
 static void ui_flow_stop_cycle_finished_timer(void)
 {
@@ -2285,6 +2293,7 @@ static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
     }
     osc_set_menu_callback(ui_flow_oscilloscope_menu_cb);
     osc_set_cycle_finished_callback(ui_flow_oscilloscope_cycle_finished_cb);
+    osc_set_profile_changed_callback(ui_flow_oscilloscope_profile_changed_cb);
     if (osc_create(NULL) != ESP_OK || osc_get_screen() == NULL) {
         return;
     }

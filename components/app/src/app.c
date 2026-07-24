@@ -451,6 +451,22 @@ static void app_spi_acquisition_task(void *argument)
                 }
                 capturing = false;
                 acquisition_stream_clear();
+            } else if (command.type == ACQUISITION_STREAM_COMMAND_RECONFIGURE_PROFILE &&
+                       command.start_config.profile < 4U && capturing &&
+                       command.start_config.profile != active_profile) {
+                if (app_spi_stop_acquisition(context->device) == ESP_OK) {
+                    acquisition_stream_clear();
+                    if (app_spi_start_acquisition(context->device, command.start_config.profile) == ESP_OK) {
+                        active_profile = command.start_config.profile;
+                        ESP_LOGI(TAG, "Perfil ADC SPI alterado para %u", active_profile);
+                    } else {
+                        capturing = false;
+                        ESP_LOGE(TAG, "falha ao reiniciar aquisicao no novo perfil SPI");
+                    }
+                } else {
+                    capturing = false;
+                    ESP_LOGE(TAG, "falha ao parar aquisicao para trocar perfil SPI");
+                }
             } else if (command.type == ACQUISITION_STREAM_COMMAND_START && command.start_config.profile < 4U) {
                 if (capturing) {
                     (void)app_spi_stop_acquisition(context->device);

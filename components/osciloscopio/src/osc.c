@@ -208,6 +208,8 @@ static void osc_update_action_buttons(void);
 static osc_menu_callback_t s_menu_callback;
 /** @brief Callback registrado pelo fluxo de telas para encerrar o ciclo atual. */
 static osc_cycle_finished_callback_t s_cycle_finished_callback;
+/** @brief Callback chamado ao trocar o perfil ADC da base de tempo. */
+static osc_profile_changed_callback_t s_profile_changed_callback;
 
 static uint32_t osc_theme_waveform_bg(void)
 {
@@ -264,8 +266,13 @@ static void osc_time_base_event_cb(lv_event_t *event)
     const uint32_t selected = lv_dropdown_get_selected(dropdown);
 
     if (selected < (sizeof(OSC_TIME_BASE_US_PER_DIV) / sizeof(OSC_TIME_BASE_US_PER_DIV[0]))) {
+        const uint8_t previous_profile = osc_get_acquisition_profile();
         s_lvgl.time_base_us_per_div = OSC_TIME_BASE_US_PER_DIV[selected];
         osc_live_envelope_reset();
+        const uint8_t new_profile = osc_get_acquisition_profile();
+        if (new_profile != previous_profile && s_profile_changed_callback != NULL) {
+            s_profile_changed_callback(new_profile);
+        }
         if (s_lvgl.waveform_renderer != NULL) {
             lv_obj_invalidate(s_lvgl.waveform_renderer);
         }
@@ -1885,6 +1892,12 @@ void osc_set_menu_callback(osc_menu_callback_t callback)
 void osc_set_cycle_finished_callback(osc_cycle_finished_callback_t callback)
 {
     s_cycle_finished_callback = callback;
+}
+
+/** @brief Define a ação executada ao trocar o perfil ADC derivado da base de tempo. */
+void osc_set_profile_changed_callback(osc_profile_changed_callback_t callback)
+{
+    s_profile_changed_callback = callback;
 }
 
 /** @brief Notifica que a STM32 concluiu uma execução PWM finita. */
