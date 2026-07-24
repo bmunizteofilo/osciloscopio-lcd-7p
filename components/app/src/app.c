@@ -400,6 +400,7 @@ static void app_spi_supervisor_task(void *argument)
     app_spi_context_t *context = argument;
     for (;;) {
         if (app_spi_alive(context->device) == ESP_OK) {
+            acquisition_stream_set_power_control_online(true);
             ESP_LOGI(TAG, "Placa STM32 detectada; aguardando comando de aquisicao");
             BaseType_t created = xTaskCreatePinnedToCore(app_spi_acquisition_task, "spi_acq",
                                                          APP_SPI_ACQUISITION_STACK_SIZE, context,
@@ -410,6 +411,7 @@ static void app_spi_supervisor_task(void *argument)
             }
             ESP_LOGE(TAG, "Falha ao criar a tarefa de aquisicao SPI");
         } else {
+            acquisition_stream_set_power_control_online(false);
             ESP_LOGW(TAG, "Placa STM32 nao detectada; nova consulta em %u s",
                      APP_SPI_RETRY_PERIOD_MS / 1000);
         }

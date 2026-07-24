@@ -19,6 +19,8 @@ static volatile uint32_t s_tail;
 static QueueHandle_t s_commands;
 /** @brief Task SPI acordada ao chegar comando de controle. */
 static TaskHandle_t s_spi_task;
+/** @brief Estado publicado pelo supervisor SPI apos o handshake ALIVE. */
+static volatile bool s_power_control_online;
 
 /** @brief Inicializa o canal de dados e comandos da aquisição. */
 void acquisition_stream_init(void)
@@ -26,6 +28,7 @@ void acquisition_stream_init(void)
     s_head = 0;
     s_tail = 0;
     s_spi_task = NULL;
+    s_power_control_online = false;
     memset(s_blocks, 0, sizeof(s_blocks));
     if (s_commands == NULL) {
         s_commands = xQueueCreate(ACQUISITION_STREAM_COMMAND_COUNT, sizeof(acquisition_stream_command_t));
@@ -38,6 +41,18 @@ void acquisition_stream_init(void)
 void acquisition_stream_set_spi_task(TaskHandle_t task)
 {
     s_spi_task = task;
+}
+
+/** @brief Atualiza o estado de presenca confirmado pelo handshake ALIVE. */
+void acquisition_stream_set_power_control_online(bool online)
+{
+    __atomic_store_n(&s_power_control_online, online, __ATOMIC_RELEASE);
+}
+
+/** @brief Informa se a placa Power Control respondeu ao ultimo handshake ALIVE. */
+bool acquisition_stream_is_power_control_online(void)
+{
+    return __atomic_load_n(&s_power_control_online, __ATOMIC_ACQUIRE);
 }
 
 /** @brief Publica um bloco completo no produtor SPSC do core 0. */

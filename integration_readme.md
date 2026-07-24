@@ -95,6 +95,90 @@ O perfil `FAST` não deve ultrapassar o limite real do ADC considerando resoluç
 
 A troca entre bases pertencentes ao mesmo perfil não deve reinicializar o ADC. Por exemplo, 20 ms/div e 100 ms/div permanecem em `SLOW`.
 
+## Acionamento PWM dos bicos
+
+A STM controla quatro bicos em sequência (`Bico 1 → Bico 2 → Bico 3 → Bico 4`).
+Nunca há mais de um bico em nível ativo: o desligamento de um bico dispara por
+hardware o próximo. O tempo desligado de cada bico continua transcorrendo
+enquanto os demais bicos são atendidos.
+
+O comando de limpeza deve informar RPM, tempo máximo ligado (`Ton`) em
+milissegundos inteiros, quantidade de ciclos completos e pausa entre ciclos. Um ciclo completo equivale a uma
+cadeia dos quatro bicos; portanto, `cycles = 100` produz 100 pulsos em cada
+bico, totalizando 400 pulsos.
+
+### Configuração PWM pela SPI
+
+A `REQUEST` SPI tem sempre quatro bytes. Por isso os nove bytes da
+configuração PWM são enviados em três comandos de configuração, seguidos por
+um comando explícito de início. Todos os campos multibyte são little-endian.
+A ESP deve esperar a `RESPONSE` de sucesso de cada comando antes de enviar o
+seguinte.
+
+```text
+PWM_CONFIG_0 (0x20): RPM_L | RPM_H | Ton_ms
+PWM_CONFIG_1 (0x21): cycles_L | cycles_H | pause_ms_L
+PWM_CONFIG_2 (0x22): pause_ms_H | operation_mode | 0x00
+PWM_START    (0x23): 0x00 | 0x00 | 0x00
+PWM_STOP     (0x24): 0x00 | 0x00 | 0x00
+```
+
+`Ton_ms` é um `uint8_t`, `RPM`, `cycles` e `pause_ms` são `uint16_t`. A
+pausa aumenta o intervalo entre dois inícios sucessivos do Bico 1; ela não
+altera a validação do máximo `Ton` permitido pelo RPM.
+
+`operation_mode` é sempre um `uint8_t`:
+
+```text
+0       = teste manual: ignora cycles e permanece ativo até PWM_STOP
+1       = execução finita: respeita cycles
+2..255  = por enquanto também respeita cycles; reservado para testes automáticos futuros
+```
+
+`PWM_START` só é aceito depois de `PWM_CONFIG_0`, `PWM_CONFIG_1` e
+`PWM_CONFIG_2`. Na versão atual, uma execução finita aceita de 1 a 256 ciclos
+por partida, limite do contador de repetição do TIM17. `PWM_STOP` é exclusivo
+da rotina de bicos e não para a aquisição ADC.
+
+### Regra de RPM, duty e tempo ligado
+
+O RPM representa um motor quatro-tempos. Cada bico se repete a cada duas voltas
+do virabrequim. A ESP **deve** validar a regra antes de enviar o comando, e a
+STM a valida novamente antes de programar os timers.
+
+```text
+1 <= RPM <= 10.000
+
+T_ciclo       = 120.000.000 / RPM us
+T_on_duty_50  = T_ciclo / 2 = 60.000.000 / RPM us
+T_on_serial   = T_ciclo / 4 = 30.000.000 / RPM us
+T_on_maximo   = min(35.000 us, T_on_duty_50, T_on_serial)
+              = min(35.000 us, 30.000.000 / RPM us)
+
+Ton_us = Ton_ms * 1.000
+1 ms <= Ton solicitado <= 35 ms
+Ton_us <= T_on_maximo
+```
+
+`T_on_duty_50` representa o limite do duty original de 50%. `T_on_serial` é o
+limite adicional imposto pela fonte: os quatro pulsos não podem se sobrepor e
+precisam caber no mesmo `T_ciclo`. Por isso ele é o limite efetivo mais restrito.
+Um pedido fora desses limites deve receber resposta de argumento inválido; a STM
+não deve reduzir `Ton` silenciosamente nem iniciar a limpeza.
+
+Exemplo para `RPM = 5.000`:
+
+```text
+T_ciclo = 24.000 us
+T_on_duty_50 = 12.000 us
+T_on_serial = 6.000 us
+T_on_maximo = 6.000 us
+```
+
+Assim, `Ton = 6 ms` é aceito e `Ton = 7 ms` é rejeitado. O tempo em nível baixo
+de cada bico não precisa terminar antes de iniciar o próximo; basta que o bico
+atual já tenha sido desligado.
+
 ## Protocolo SPI
 
 Todos os comandos são iniciados pela ESP e possuem duas fases: `REQUEST` e `RESPONSE`. Esta separação é obrigatória porque, em SPI escravo, a STM precisa receber o opcode, processá-lo e armar o DMA de transmissão **antes** de o mestre gerar os clocks da resposta.
@@ -147,6 +231,11 @@ Regras elétricas e de firmware:
 | `0x03` | `STOP` | `0, 0, 0` | Para aquisição e baixa `DRDY`. Resposta: 1 byte de resultado. |
 | `0x04` | `STATUS` | `0xFF, 0xFF, 0xFF` | Prepara o estado do escravo. Resposta: 4 bytes. |
 | `0x10` | `READ_BLOCK` | `0, 0, 0` | Trava o próximo bloco disponível e prepara cabeçalho e payload. Só permitido com `DRDY=1`. |
+| `0x20` | `PWM_CONFIG_0` | `rpm_L, rpm_H, Ton_ms` | Grava RPM e tempo ligado PWM. Resposta: 1 byte de resultado. |
+| `0x21` | `PWM_CONFIG_1` | `cycles_L, cycles_H, pause_ms_L` | Grava ciclos e byte baixo da pausa PWM. Resposta: 1 byte de resultado. |
+| `0x22` | `PWM_CONFIG_2` | `pause_ms_H, operation_mode, 0` | Grava byte alto da pausa e modo PWM. Resposta: 1 byte de resultado. |
+| `0x23` | `PWM_START` | `0, 0, 0` | Valida a configuração completa e inicia os bicos. Resposta: 1 byte de resultado. |
+| `0x24` | `PWM_STOP` | `0, 0, 0` | Para imediatamente a rotina PWM. Resposta: 1 byte de resultado. |
 | `0x7F` | `RESET` | `0, 0, 0` | Limpa estado SPI e reinicia a aquisição parada. Resposta: 1 byte de resultado. |
 | `0x80` | `READ_RESPONSE` | seguido de dummies | Usado somente na fase `RESPONSE`; não é uma `REQUEST`. |
 
@@ -164,10 +253,10 @@ RX: ignorar
 RESPONSE_ALIVE
 TX: 0x80 0xFF 0xFF 0xFF
 RX: ignorar RX[0]
-    RX[1..3] = 0xA5 0x5A 0x02
+    RX[1..3] = 0xA5 0x5A 0x03
 ```
 
-`0xA5 0x5A` é a assinatura fixa e `0x02` é a versão deste protocolo. A STM arma essa resposta depois de receber e validar `REQUEST_ALIVE`. A ESP só considera a placa presente se os três bytes coincidirem exatamente; isso evita aceitar MISO flutuante como resposta válida.
+`0xA5 0x5A` é a assinatura fixa e `0x03` é a versão deste protocolo. A STM arma essa resposta depois de receber e validar `REQUEST_ALIVE`. A ESP só considera a placa presente se os três bytes coincidirem exatamente; isso evita aceitar MISO flutuante como resposta válida.
 
 Se não houver resposta válida, a ESP informa que a placa STM32 não foi
 detectada e não cria a task de aquisição SPI. Uma task leve de supervisão no
@@ -194,10 +283,23 @@ Para `READ_BLOCK`, a ESP só inicia `REQUEST_READ_BLOCK` quando `DRDY` estiver a
 O primeiro byte recebido simultaneamente ao opcode deve ser ignorado. Os bytes seguintes são:
 
 ```text
-seq | profile | frame_count_L | frame_count_H | payload
+seq | profile | frame_count_L | frame_count_H | cycle_done | payload
 ```
 
 O payload contém `frame_count` frames de 8 bytes, em ordem cronológica, do mais antigo para o mais recente.
+
+`cycle_done` é um `uint8_t` associado ao bloco ADC:
+
+```text
+0 = não houve encerramento PWM finito pendente neste bloco
+1 = a quantidade de ciclos PWM configurada terminou
+```
+
+Quando uma execução PWM finita termina, a STM mantém a indicação pendente até
+conseguir publicar um bloco ADC na fila SPI. Ela marca somente esse bloco com
+`cycle_done = 1`; blocos posteriores voltam a `0`. Em modo manual e após
+`PWM_STOP`, o campo permanece em `0`. O comportamento de `DRDY` não muda:
+ele continua indicando exclusivamente que há ao menos um bloco ADC pronto.
 
 Exemplo `FAST`:
 
@@ -207,12 +309,13 @@ TX: 0x10 0x00 0x00 0x00
 RX: ignorar
 
 RESPONSE_READ_BLOCK
-TX: 0x80 + 2052 bytes 0xFF
+TX: 0x80 + 2053 bytes 0xFF
 RX: ignorar RX[0]
     RX[1] = seq
     RX[2] = profile
     RX[3..4] = frame_count = 256 (little-endian)
-    RX[5..2052] = 256 × 8 bytes de frames
+    RX[5] = cycle_done
+    RX[6..2053] = 256 × 8 bytes de frames
 ```
 
 Não há timestamp nem CRC nesta versão. A ESP deve verificar se `seq` avançou de uma unidade módulo 256. Qualquer salto indica bloco perdido ou overflow na STM.
@@ -259,7 +362,7 @@ Dois slots absorvem jitter e reduzem perdas pontuais, mas não compensam uma dif
 5. A STM processa uma `REQUEST` somente depois que CS voltar a nível alto e a transferência de quatro bytes for validada. Em seguida, arma a `RESPONSE`, eleva `SYNC` e só baixa `SYNC` após a RESPONSE terminar e a próxima REQUEST estar armada.
 6. A STM não deve bloquear a aquisição esperando a ESP, exceto quando os dois buffers já estiverem ocupados.
 7. A sequência incrementa por bloco adquirido, inclusive quando um bloco precisa ser descartado por overflow.
-8. `CONFIG_PROFILE`, `START`, `STOP` e `RESET` devem ser processados fora de interrupções longas, preservando a integridade do DMA e do SPI escravo.
+8. `CONFIG_PROFILE`, `START`, `STOP`, comandos `PWM_*` e `RESET` devem ser processados fora de interrupções longas, preservando a integridade do DMA e do SPI escravo.
 
 ## Próximas implementações na ESP
 

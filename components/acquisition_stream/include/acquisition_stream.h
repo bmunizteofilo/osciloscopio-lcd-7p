@@ -45,6 +45,12 @@ void acquisition_stream_init(void);
 /** @brief Define a task SPI que deve ser acordada para comandos de controle. */
 void acquisition_stream_set_spi_task(TaskHandle_t task);
 
+/** @brief Atualiza o estado de presenca confirmado pelo handshake ALIVE. */
+void acquisition_stream_set_power_control_online(bool online);
+
+/** @brief Informa se a placa Power Control respondeu ao ultimo handshake ALIVE. */
+bool acquisition_stream_is_power_control_online(void);
+
 /** @brief Publica um bloco completo no produtor SPSC do core 0. */
 bool acquisition_stream_publish(const acquisition_stream_block_t *block);
 

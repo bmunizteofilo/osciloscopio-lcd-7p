@@ -869,20 +869,26 @@ static void ui_flow_update_menu_connectivity_labels(void)
     if (guider_ui.screen_menu_principal.label_status_wifi != NULL) {
         wifi_manager_status_t wifi_status = {0};
         const bool wifi_online = wifi_manager_get_status(&wifi_status) == ESP_OK && wifi_status.connected;
-        lv_label_set_text(guider_ui.screen_menu_principal.label_status_wifi,
-                          wifi_online ? "Wifi - Online" : "Wifi - Offline");
-        lv_obj_set_style_text_color(guider_ui.screen_menu_principal.label_status_wifi,
-                                    wifi_online ? lv_color_hex(0x00c853) : lv_color_hex(0xffffff), LV_PART_MAIN);
+        if (guider_ui.screen_menu_principal.led_wifi != NULL) {
+            lv_led_set_color(guider_ui.screen_menu_principal.led_wifi,
+                             wifi_online ? lv_color_hex(0x00c853) : lv_color_hex(0xef1212));
+        }
     }
 
     if (guider_ui.screen_menu_principal.label_status_bluetooth != NULL) {
         bluetooth_manager_status_t bluetooth_status = {0};
         const bool bluetooth_online = bluetooth_manager_get_status(&bluetooth_status) == ESP_OK &&
                                       bluetooth_status.enabled;
-        lv_label_set_text(guider_ui.screen_menu_principal.label_status_bluetooth,
-                          bluetooth_online ? "Bluetooth - Online" : "Bluetooth - Offline");
-        lv_obj_set_style_text_color(guider_ui.screen_menu_principal.label_status_bluetooth,
-                                    bluetooth_online ? lv_color_hex(0x2196f3) : lv_color_hex(0xffffff), LV_PART_MAIN);
+        if (guider_ui.screen_menu_principal.led_bluetooth != NULL) {
+            lv_led_set_color(guider_ui.screen_menu_principal.led_bluetooth,
+                             bluetooth_online ? lv_color_hex(0x00c853) : lv_color_hex(0xef1212));
+        }
+    }
+
+    if (guider_ui.screen_menu_principal.led_power_control != NULL) {
+        lv_led_set_color(guider_ui.screen_menu_principal.led_power_control,
+                         acquisition_stream_is_power_control_online() ? lv_color_hex(0x00c853) :
+                                                                        lv_color_hex(0xef1212));
     }
 }
 
