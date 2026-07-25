@@ -85,15 +85,45 @@ bytes por segundo = taxa de frames × 8
 | Perfil | Taxa total ADC | Taxa por canal / frames | Dados brutos | Frames/bloco | Payload |
 |---|---:|---:|---:|---:|---:|
 | `FAST` (`0`) | 400 kS/s | 100 kS/s | 800 kB/s | 256 | 2048 B |
-| `MEDIUM` (`1`) | 100 kS/s | 25 kS/s | 200 kB/s | 128 | 1024 B |
-| `SLOW` (`2`) | 50 kS/s | 12,5 kS/s | 100 kB/s | 64 | 512 B |
-| `VERY_SLOW` (`3`) | 10 kS/s | 2,5 kS/s | 20 kB/s | 16 | 128 B |
+| `MEDIUM` (`1`) | 100 kS/s | 25 kS/s | 200 kB/s | 256 | 2048 B |
+| `SLOW` (`2`) | 50 kS/s | 12,5 kS/s | 100 kB/s | 128 | 1024 B |
+| `VERY_SLOW` (`3`) | 10 kS/s | 2,5 kS/s | 20 kB/s | 64 | 512 B |
 
 O timer de trigger deve operar na taxa de frames indicada na tabela. Assim, no perfil `FAST`, TIM6 dispara uma sequência ADC de quatro canais a 100 kHz, resultando em 400 kconversões/s totais.
 
 O perfil `FAST` não deve ultrapassar o limite real do ADC considerando resolução, sample time e impedância da fonte analógica. A proposta de 400 kconversões/s totais fica abaixo da capacidade típica do ADC do STM32G070 e gera 800 kB/s, deixando margem no SPI a 10 MHz (máximo teórico bruto de 1,25 MB/s).
 
-A troca entre bases pertencentes ao mesmo perfil não deve reinicializar o ADC. Por exemplo, 20 ms/div e 100 ms/div permanecem em `SLOW`.
+### Mapeamento de base de tempo na ESP
+
+| Base por divisão | Perfil | Taxa de frames | Frames por pixel, aproximadamente |
+|---|---:|---:|---:|
+| 1 ms, 2 ms, 5 ms e 10 ms | `MEDIUM` (`1`) | 25 kframes/s | 0,4 a 4,3 |
+| 20 ms | `SLOW` (`2`) | 12,5 kframes/s | 4,3 |
+| 50 ms, 100 ms, 250 ms, 500 ms e 1 s | `VERY_SLOW` (`3`) | 2,5 kframes/s | 2,1 ou mais |
+
+O objetivo é manter resolução temporal suficiente sem sobrecarregar ADC, SPI e CPU. Em 1 ms/div, 25 kframes/s produzem 250 amostras na janela de 10 ms: cada amostra representa 40 us e um pulso mínimo de 1 ms contém 25 amostras. Quando há menos amostras que pixels, a ESP distribui os pontos pelo eixo X e usa interpolação linear apenas para continuidade visual; ela não cria informação elétrica adicional.
+
+O perfil `FAST` permanece reservado no protocolo para uma futura análise de ruído ou ringing, mas não é selecionado pela UI atual. A taxa de 100 kframes/s não é sustentada pelo protocolo SPI request/response a 10 MHz com a ligação por fios.
+
+Ao trocar de base, a ESP reinicia ADC/DMA no perfil correspondente e descarta o histórico anterior. A STM deve aceitar `STOP`, `CONFIG_PROFILE` e `START` a qualquer momento entre blocos.
+
+### Alteração obrigatória na STM32: bloco do perfil SLOW
+
+Os tamanhos dos blocos foram ajustados para reduzir a taxa de handshakes SPI. Portanto, no firmware STM32, a função que mapeia perfil para `frame_count` deve usar:
+
+```c
+case APP_ACQUISITION_PROFILE_MEDIUM:    *frame_count = 256U; break;
+case APP_ACQUISITION_PROFILE_SLOW:      *frame_count = 128U; break;
+case APP_ACQUISITION_PROFILE_VERY_SLOW: *frame_count = 64U; break;
+```
+
+Consequências dos novos blocos:
+
+- `MEDIUM`: 256 frames, payload de 2048 bytes, período de 10,24 ms e aproximadamente 98 blocos/s;
+- `SLOW`: 128 frames, payload de 1024 bytes, período de 10,24 ms e aproximadamente 98 blocos/s;
+- `VERY_SLOW`: 64 frames, payload de 512 bytes, período de 25,6 ms e aproximadamente 39 blocos/s.
+
+Essas mudanças reduzem o número de handshakes `DRV`/`SYNC` e transações SPI, mantendo exatamente as mesmas taxas de amostragem e qualidade de sinal.
 
 ## Acionamento PWM dos bicos
 
@@ -340,7 +370,7 @@ Ao processar `READ_BLOCK`, a STM copia o bloco mais antigo da fila para o buffer
 
 `DRDY` deve permanecer alto enquanto existir ao menos um bloco na fila e só deve baixar quando ela ficar vazia. Se a fila estiver cheia ao chegar um novo bloco ADC, a STM pode descartar o mais antigo ou o mais novo, desde que incremente a sequência normalmente; a ESP detectará a lacuna pelo byte `seq`.
 
-Dois slots absorvem jitter e reduzem perdas pontuais, mas não compensam uma diferença permanente de taxa. No perfil `FAST`, a ESP precisa consumir cada bloco de 256 frames em menos de aproximadamente 2,56 ms para acompanhar a produção contínua. A fila é margem de segurança, não substitui uma taxa SPI sustentada suficiente.
+Dois slots absorvem jitter e reduzem perdas pontuais, mas não compensam uma diferença permanente de taxa. No perfil `FAST`, reservado para uso futuro, a ESP precisaria consumir cada bloco de 256 frames em menos de aproximadamente 2,56 ms. Nos perfis ativos, `MEDIUM` e `SLOW` possuem intervalo de 10,24 ms, e `VERY_SLOW` de 25,6 ms. A fila é margem de segurança, não substitui uma taxa SPI sustentada suficiente.
 
 ## Regras de software na ESP32
 
@@ -348,10 +378,10 @@ Dois slots absorvem jitter e reduzem perdas pontuais, mas não compensam uma dif
 2. A task LVGL deve ficar fixada no core 1.
 3. As ISRs de `DRDY` e `SYNC` apenas notificam a task SPI; elas não executam transferências.
 4. Para cada operação, a task SPI envia uma `REQUEST`, aguarda `SYNC` alto, então envia `READ_RESPONSE` com o tamanho previsto para aquele opcode e aguarda `SYNC` baixo.
-5. Quando `DRDY` estiver alto, a task SPI executa `REQUEST_READ_BLOCK` seguido de `RESPONSE_READ_BLOCK`, valida cabeçalho/perfil/sequência e grava frames em uma fila SPSC.
-6. O componente `osciloscopio`, no core 1, remove frames da fila e atualiza seu histórico circular em PSRAM.
-7. Uma troca de perfil deve solicitar `STOP`, `CONFIG_PROFILE`, limpar a fila de entrada e enviar `START`.
-8. O histórico visual da ESP não depende da base usada no instante de captura; a base de tempo controla apenas a janela apresentada.
+5. Quando `DRDY` estiver alto, a task SPI executa `REQUEST_READ_BLOCK` seguido de `RESPONSE_READ_BLOCK`, valida cabeçalho/perfil e grava o payload diretamente no histórico circular em PSRAM.
+6. O Core 0 é o único escritor do histórico; o Core 1 lê apenas snapshots atômicos para renderizar. Portanto, lentidão do LVGL nunca pode interromper a drenagem SPI.
+7. Uma troca de perfil deve solicitar `STOP`, `CONFIG_PROFILE`, resetar o histórico e enviar `START`.
+8. A interface desenha em taxa visual limitada, mas a captura e o histórico preservam todos os frames recebidos.
 
 ## Regras de software na STM32
 
@@ -367,6 +397,5 @@ Dois slots absorvem jitter e reduzem perdas pontuais, mas não compensam uma dif
 ## Próximas implementações na ESP
 
 - Escolher e conectar o GPIO `DRDY`.
-- Criar a task SPI no core 0 e a fila SPSC de frames.
-- Expor no componente `osciloscopio` uma API de ingestão de frames ADC.
-- Substituir progressivamente o gerador de sinal simulado pela entrada SPI.
+- Monitorar a sequência dos blocos para registrar lacunas de aquisição.
+- Validar as quatro faixas de taxa com gerador de função e sinais reais.

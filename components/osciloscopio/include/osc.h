@@ -81,6 +81,13 @@ lv_obj_t *osc_get_screen(void);
 esp_err_t osc_set_input_sample_rate(uint32_t sample_rate_hz);
 
 /**
+ * @brief Atualiza a fotografia visual com as amostras capturadas no Core 0.
+ *
+ * Deve ser chamada apenas pela task LVGL no Core 1.
+ */
+void osc_refresh_acquisition_history(void);
+
+/**
  * @brief Insere um frame ADC de quatro canais no histórico do osciloscópio.
  *
  * Os valores devem ser conversões ADC de 12 bits alinhadas nos bits menos

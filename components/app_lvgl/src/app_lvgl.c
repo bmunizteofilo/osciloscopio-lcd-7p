@@ -14,6 +14,7 @@
 #include "ui_flow.h"
 #include "osc.h"
 #include "acquisition_stream.h"
+#include "acquisition_history.h"
 
 /** @brief Periodo do tick entregue ao LVGL, em milissegundos. */
 #define APP_LVGL_TICK_PERIOD_MS 1
@@ -23,8 +24,6 @@
 #define APP_LVGL_TASK_PRIORITY 4
 /** @brief Intervalo entre chamadas do manipulador LVGL. */
 #define APP_LVGL_TASK_DELAY_MS 5
-/** @brief Máximo de blocos SPI encaminhados ao histórico por ciclo LVGL. */
-#define APP_LVGL_ACQUISITION_BLOCKS_PER_CYCLE 4
 /** @brief Habilita o monitor periódico de heap interna e PSRAM. */
 #define APP_LVGL_MONITOR_HEAP_LOG 0
 /** @brief Período entre registros do monitor de memória. */
@@ -51,39 +50,14 @@ static app_lvgl_context_t s_lvgl = {0};
 /** @brief Tag usada nos registros da infraestrutura LVGL. */
 static const char *TAG = "app_lvgl";
 
-/** @brief Converte perfis STM em taxa de frames por segundo. */
-static const uint32_t s_acquisition_sample_rates[] = {100000U, 25000U, 12500U, 2500U};
-/** @brief Buffer de conversao persistente para nao pressionar a pilha da task LVGL. */
-static uint16_t s_acquisition_frames[ACQUISITION_STREAM_MAX_FRAMES][4];
-
 /**
- * @brief Consome blocos SPI no core 1 e atualiza o histórico em lotes.
+ * @brief Atualiza o snapshot visual do histórico recebido pelo Core 0.
  */
 static void app_lvgl_consume_acquisition(void)
 {
-    acquisition_stream_block_t block;
-    for (uint8_t block_index = 0; block_index < APP_LVGL_ACQUISITION_BLOCKS_PER_CYCLE; block_index++) {
-        if (!acquisition_stream_take(&block)) {
-            break;
-        }
-        if (block.profile > 3U || block.frame_count == 0U ||
-            block.payload_length != block.frame_count * ACQUISITION_STREAM_FRAME_BYTES) {
-            continue;
-        }
-        (void)osc_set_input_sample_rate(s_acquisition_sample_rates[block.profile]);
-        for (uint16_t frame = 0; frame < block.frame_count; frame++) {
-            const uint8_t *source = &block.payload[frame * ACQUISITION_STREAM_FRAME_BYTES];
-            for (uint8_t channel = 0; channel < 4; channel++) {
-                const uint16_t value = (uint16_t)source[channel * 2U] |
-                                       ((uint16_t)source[channel * 2U + 1U] << 8U);
-                s_acquisition_frames[frame][channel] = value & 0x0fffU;
-            }
-        }
-        (void)osc_push_frames(s_acquisition_frames, block.frame_count);
-        if (block.cycle_done) {
-            osc_notify_cycle_done();
-            break;
-        }
+    osc_refresh_acquisition_history();
+    if (acquisition_history_take_cycle_done()) {
+        osc_notify_cycle_done();
     }
 }
 

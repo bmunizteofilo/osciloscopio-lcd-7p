@@ -8,6 +8,7 @@
 #include "esp_check.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "driver_i2c.h"
 #include "driver_gpio.h"
 #include "driver_spi.h"
@@ -21,6 +22,7 @@
 #include "general_settings.h"
 #include "report_storage.h"
 #include "acquisition_stream.h"
+#include "acquisition_history.h"
 
 #define APP_I2C_SCL_GPIO DRIVER_GPIO_NUM_47
 #define APP_I2C_SDA_GPIO DRIVER_GPIO_NUM_48
@@ -62,6 +64,8 @@
 #define APP_SPI_SUPERVISOR_PRIORITY 5
 #define APP_SPI_ACQUISITION_STACK_SIZE 4096
 #define APP_SPI_ACQUISITION_PRIORITY 8
+/** @brief Período da telemetria temporária de taxa de aquisição. */
+#define APP_SPI_ACQUISITION_METRICS_PERIOD_US (3ULL * 1000ULL * 1000ULL)
 
 /** @brief Tag usada nos registros de inicialização da aplicação. */
 static const char *TAG = "app";
@@ -79,6 +83,18 @@ static app_spi_context_t s_spi;
 /** @brief Buffers persistentes da transação de resposta da task SPI. */
 static uint8_t s_spi_response_tx[APP_SPI_MAX_RESPONSE_SIZE];
 static uint8_t s_spi_response_rx[APP_SPI_MAX_RESPONSE_SIZE];
+
+/**
+ * @brief Retorna a taxa nominal de frames do perfil de aquisição STM32.
+ *
+ * @param[in] profile Perfil recebido no protocolo SPI.
+ * @return Taxa nominal em frames por segundo, ou zero se inválido.
+ */
+static uint32_t app_spi_profile_frame_rate(uint8_t profile)
+{
+    static const uint32_t frame_rates[] = {100000U, 25000U, 12500U, 2500U};
+    return profile < (sizeof(frame_rates) / sizeof(frame_rates[0])) ? frame_rates[profile] : 0U;
+}
 
 /**
  * @brief Notifica a task SPI de que a STM publicou um bloco ADC em DRV.
@@ -395,14 +411,13 @@ static esp_err_t app_spi_stop_pwm(driver_spi_device_handle_t device)
  */
 static esp_err_t app_spi_read_block(driver_spi_device_handle_t device, uint8_t expected_profile)
 {
-    static const uint16_t frames_per_profile[] = {256U, 128U, 64U, 16U};
+    static const uint16_t frames_per_profile[] = {256U, 256U, 128U, 64U};
     ESP_RETURN_ON_FALSE(expected_profile < 4U, ESP_ERR_INVALID_ARG, TAG, "perfil SPI invalido");
     const uint16_t expected_frames = frames_per_profile[expected_profile];
     ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_READ_BLOCK, 0, 0, 0,
                                                 APP_SPI_BLOCK_HEADER_SIZE + expected_frames * 8U),
                         TAG, "falha ao solicitar bloco SPI");
 
-    const uint8_t sequence = s_spi_response_rx[1];
     const uint8_t profile = s_spi_response_rx[2];
     const uint16_t frame_count = (uint16_t)s_spi_response_rx[3] |
                                  ((uint16_t)s_spi_response_rx[4] << 8U);
@@ -410,16 +425,12 @@ static esp_err_t app_spi_read_block(driver_spi_device_handle_t device, uint8_t e
     ESP_RETURN_ON_FALSE(profile == expected_profile && frame_count == expected_frames &&
                             payload_length <= APP_SPI_MAX_BLOCK_PAYLOAD_SIZE,
                         ESP_ERR_INVALID_RESPONSE, TAG, "cabecalho de bloco invalido");
-    acquisition_stream_block_t block = {
-        .sequence = sequence,
-        .profile = profile,
-        .frame_count = frame_count,
-        .payload_length = (uint16_t)payload_length,
-    };
-    block.cycle_done = s_spi_response_rx[5] == 1U;
-    memcpy(block.payload, &s_spi_response_rx[6], payload_length);
-    ESP_RETURN_ON_FALSE(acquisition_stream_publish(&block), ESP_ERR_NO_MEM, TAG,
-                        "fila de blocos SPI cheia");
+    const uint32_t frame_rate = app_spi_profile_frame_rate(profile);
+    ESP_RETURN_ON_ERROR(acquisition_history_push_payload(&s_spi_response_rx[6], frame_count, frame_rate), TAG,
+                        "falha ao gravar bloco no historico");
+    if (s_spi_response_rx[5] == 1U) {
+        acquisition_history_mark_cycle_done();
+    }
     return ESP_OK;
 }
 
@@ -437,8 +448,13 @@ static void app_spi_acquisition_task(void *argument)
         return;
     }
     acquisition_stream_set_spi_task(xTaskGetCurrentTaskHandle());
+    static const uint16_t frames_per_profile[] = {256U, 256U, 128U, 64U};
     bool capturing = false;
     uint8_t active_profile = 0;
+    uint32_t received_blocks = 0;
+    uint32_t received_frames = 0;
+    uint32_t read_errors = 0;
+    uint64_t metrics_start_us = (uint64_t)esp_timer_get_time();
     for (;;) {
         acquisition_stream_command_t command;
         while (acquisition_stream_take_command(&command)) {
@@ -451,14 +467,22 @@ static void app_spi_acquisition_task(void *argument)
                 }
                 capturing = false;
                 acquisition_stream_clear();
+                acquisition_history_reset();
+                received_blocks = 0;
+                received_frames = 0;
+                read_errors = 0;
             } else if (command.type == ACQUISITION_STREAM_COMMAND_RECONFIGURE_PROFILE &&
-                       command.start_config.profile < 4U && capturing &&
-                       command.start_config.profile != active_profile) {
+                       command.start_config.profile < 4U && capturing) {
                 if (app_spi_stop_acquisition(context->device) == ESP_OK) {
                     acquisition_stream_clear();
+                    acquisition_history_reset();
                     if (app_spi_start_acquisition(context->device, command.start_config.profile) == ESP_OK) {
                         active_profile = command.start_config.profile;
-                        ESP_LOGI(TAG, "Perfil ADC SPI alterado para %u", active_profile);
+                        received_blocks = 0;
+                        received_frames = 0;
+                        read_errors = 0;
+                        metrics_start_us = (uint64_t)esp_timer_get_time();
+                        ESP_LOGI(TAG, "Aquisicao ADC reiniciada no perfil %u", active_profile);
                     } else {
                         capturing = false;
                         ESP_LOGE(TAG, "falha ao reiniciar aquisicao no novo perfil SPI");
@@ -472,10 +496,15 @@ static void app_spi_acquisition_task(void *argument)
                     (void)app_spi_stop_acquisition(context->device);
                 }
                 acquisition_stream_clear();
+                acquisition_history_reset();
                 if (app_spi_start_acquisition(context->device, command.start_config.profile) == ESP_OK &&
                     app_spi_start_pwm(context->device, &command.start_config) == ESP_OK) {
                     active_profile = command.start_config.profile;
                     capturing = true;
+                    received_blocks = 0;
+                    received_frames = 0;
+                    read_errors = 0;
+                    metrics_start_us = (uint64_t)esp_timer_get_time();
                     ESP_LOGI(TAG, "Aquisicao SPI iniciada no perfil %u", active_profile);
                 } else {
                     capturing = false;
@@ -485,11 +514,35 @@ static void app_spi_acquisition_task(void *argument)
             }
         }
         bool data_ready = false;
-        if (capturing && acquisition_stream_has_space() &&
+        if (capturing &&
             driver_gpio_get_level(APP_SPI_DRV_GPIO, &data_ready) == ESP_OK && data_ready) {
-            if (app_spi_read_block(context->device, active_profile) != ESP_OK) {
+            if (app_spi_read_block(context->device, active_profile) == ESP_OK) {
+                received_blocks++;
+                received_frames += frames_per_profile[active_profile];
+            } else {
+                read_errors++;
                 ESP_LOGW(TAG, "falha ao ler bloco SPI");
             }
+        }
+
+        const uint64_t now_us = (uint64_t)esp_timer_get_time();
+        if (capturing && now_us - metrics_start_us >= APP_SPI_ACQUISITION_METRICS_PERIOD_US) {
+            const uint64_t elapsed_us = now_us - metrics_start_us;
+            const uint32_t expected_rate = app_spi_profile_frame_rate(active_profile);
+            const uint32_t measured_rate = (uint32_t)(((uint64_t)received_frames * 1000000ULL) / elapsed_us);
+            const uint32_t expected_blocks = (uint32_t)(((uint64_t)expected_rate * elapsed_us) /
+                                                        ((uint64_t)frames_per_profile[active_profile] * 1000000ULL));
+            ESP_LOGI(TAG,
+                     "SPI ADC (%llu ms): perfil=%u blocos=%u/%u frames=%u taxa=%u/%u fps erros=%u",
+                     elapsed_us / 1000ULL, active_profile, received_blocks, expected_blocks,
+                     received_frames, measured_rate, expected_rate, read_errors);
+            received_blocks = 0;
+            received_frames = 0;
+            read_errors = 0;
+            metrics_start_us = now_us;
+        }
+
+        if (data_ready) {
             continue;
         }
         (void)ulTaskNotifyTake(pdTRUE, capturing ? pdMS_TO_TICKS(1) : portMAX_DELAY);
@@ -555,6 +608,7 @@ esp_err_t app_init(void)
     }
     ESP_RETURN_ON_ERROR(nvs_err, TAG, "falha ao inicializar NVS");
     acquisition_stream_init();
+    ESP_RETURN_ON_ERROR(acquisition_history_init(), TAG, "falha ao reservar historico ADC na PSRAM");
     ESP_RETURN_ON_ERROR(report_storage_init(), TAG, "falha ao iniciar armazenamento de relatorios");
     driver_i2c_bus_handle_t i2c_bus = NULL;
     ESP_RETURN_ON_ERROR(app_i2c_init(&i2c_bus), TAG, "falha ao inicializar I2C");

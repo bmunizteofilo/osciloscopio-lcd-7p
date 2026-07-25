@@ -218,6 +218,7 @@ static void ui_flow_show_general_panel(void);
 /** @brief Solicita à task SPI a troca de perfil ADC escolhida na base de tempo. */
 static void ui_flow_oscilloscope_profile_changed_cb(uint8_t profile)
 {
+    acquisition_stream_clear();
     if (!acquisition_stream_request_profile(profile)) {
         ESP_LOGW("ui_flow", "nao foi possivel solicitar troca de perfil ADC");
     }
