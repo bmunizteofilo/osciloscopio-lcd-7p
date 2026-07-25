@@ -185,9 +185,11 @@ typedef struct {
     uint32_t trigger_scan_total_frames;
     uint32_t trigger_latest_event_frame;
     uint32_t trigger_candidate_event_frame;
+    uint32_t trigger_normal_first_frame;
     bool trigger_scan_initialized;
     bool trigger_latest_event_valid;
     bool trigger_candidate_event_valid;
+    bool trigger_normal_hold_valid;
     uint32_t history_view_offset;
     int32_t history_drag_last_x;
     bool history_navigation_started;
@@ -215,6 +217,7 @@ static void osc_trigger_edge_event_cb(lv_event_t *event);
 static void osc_trigger_channel_event_cb(lv_event_t *event);
 static void osc_clear_measurements(uint8_t channel);
 static void osc_update_action_buttons(void);
+static void osc_trigger_reset_search(void);
 static void osc_trigger_reset_detector(void);
 static void osc_trigger_scan_new_samples(void);
 
@@ -415,7 +418,8 @@ static void osc_trigger_line_event_cb(lv_event_t *event)
         y = OSC_WAVEFORM_INNER_Y + OSC_WAVEFORM_INNER_HEIGHT - 2;
     }
     lv_obj_set_y(s_lvgl.trigger_line, y);
-    osc_trigger_reset_detector();
+    /* Mantem a ultima captura normal visivel enquanto procura a nova borda. */
+    osc_trigger_reset_search();
     osc_show_trigger_line();
     lv_obj_invalidate(s_lvgl.waveform_renderer);
 }
@@ -1218,8 +1222,14 @@ static void osc_waveform_draw_line(uint16_t *framebuffer, uint32_t stride_px, co
     }
 }
 
-/** @brief Reinicia a detecção incremental de borda. */
-static void osc_trigger_reset_detector(void)
+/**
+ * @brief Reinicia a busca incremental por uma nova borda de trigger.
+ *
+ * A captura retida pelo modo Normal nao e alterada. Isso permite ajustar o
+ * nivel do trigger sem apagar a ultima janela valida enquanto nao ha uma nova
+ * borda no nivel escolhido.
+ */
+static void osc_trigger_reset_search(void)
 {
     s_lvgl.trigger_single_captured = false;
     s_lvgl.trigger_single_first_sample = 0U;
@@ -1229,6 +1239,20 @@ static void osc_trigger_reset_detector(void)
     s_lvgl.trigger_scan_initialized = false;
     s_lvgl.trigger_latest_event_valid = false;
     s_lvgl.trigger_candidate_event_valid = false;
+}
+
+/**
+ * @brief Reinicia completamente a detecção incremental de borda.
+ *
+ * Alem da busca por eventos, invalida a janela retida do modo Normal. Deve
+ * ser usada quando a referencia da captura deixa de ser compativel, como em
+ * troca de canal, borda, modo ou historico.
+ */
+static void osc_trigger_reset_detector(void)
+{
+    osc_trigger_reset_search();
+    s_lvgl.trigger_normal_first_frame = 0U;
+    s_lvgl.trigger_normal_hold_valid = false;
 }
 
 /**
@@ -1424,8 +1448,23 @@ static void osc_waveform_draw_event_cb(lv_event_t *event)
                 s_lvgl.trigger_single_captured = true;
                 plot_triggered = true;
             } else if (trigger_found) {
+                if (s_lvgl.trigger_mode == 1U) {
+                    s_lvgl.trigger_normal_first_frame =
+                        s_lvgl.waveform_total_frames - s_lvgl.waveform_sample_count + first_sample;
+                    s_lvgl.trigger_normal_hold_valid = true;
+                }
                 plot_triggered = true;
-            } else if (!trigger_found && s_lvgl.trigger_mode != 2) {
+            } else if (s_lvgl.trigger_mode == 1U) {
+                const uint32_t history_first = s_lvgl.waveform_total_frames - s_lvgl.waveform_sample_count;
+                if (s_lvgl.trigger_normal_hold_valid &&
+                    s_lvgl.trigger_normal_first_frame >= history_first &&
+                    s_lvgl.trigger_normal_first_frame + displayed_samples <= s_lvgl.waveform_total_frames) {
+                    first_sample = s_lvgl.trigger_normal_first_frame - history_first;
+                    plot_triggered = true;
+                } else {
+                    draw_signal = false;
+                }
+            } else if (s_lvgl.trigger_mode != 2U) {
                 draw_signal = false;
             }
         }
