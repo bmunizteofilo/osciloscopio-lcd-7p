@@ -84,7 +84,7 @@ bytes por segundo = taxa de frames × 8
 
 | Perfil | Taxa total ADC | Taxa por canal / frames | Dados brutos | Frames/bloco | Payload |
 |---|---:|---:|---:|---:|---:|
-| `FAST` (`0`) | 400 kS/s | 100 kS/s | 800 kB/s | 256 | 2048 B |
+| `FAST` (`0`) | 400 kS/s | 100 kS/s | 800 kB/s | reservado na STM32 | não enviado pela ESP |
 | `MEDIUM` (`1`) | 100 kS/s | 25 kS/s | 200 kB/s | 256 | 2048 B |
 | `SLOW` (`2`) | 50 kS/s | 12,5 kS/s | 100 kB/s | 128 | 1024 B |
 | `VERY_SLOW` (`3`) | 10 kS/s | 2,5 kS/s | 20 kB/s | 64 | 512 B |
@@ -103,11 +103,11 @@ O perfil `FAST` não deve ultrapassar o limite real do ADC considerando resoluç
 
 O objetivo é manter resolução temporal suficiente sem sobrecarregar ADC, SPI e CPU. Em 1 ms/div, 25 kframes/s produzem 250 amostras na janela de 10 ms: cada amostra representa 40 us e um pulso mínimo de 1 ms contém 25 amostras. Quando há menos amostras que pixels, a ESP distribui os pontos pelo eixo X e usa interpolação linear apenas para continuidade visual; ela não cria informação elétrica adicional.
 
-O perfil `FAST` permanece reservado no protocolo para uma futura análise de ruído ou ringing, mas não é selecionado pela UI atual. A taxa de 100 kframes/s não é sustentada pelo protocolo SPI request/response a 10 MHz com a ligação por fios.
+O perfil `FAST` permanece reservado na STM32, mas não é selecionado pela UI nem enviado pela ESP. Mesmo com blocos de 512 frames, o protocolo SPI request/response a 10 MHz com fios sustentou apenas aproximadamente 58 kframes/s, abaixo dos 100 kframes/s necessários.
 
 Ao trocar de base, a ESP reinicia ADC/DMA no perfil correspondente e descarta o histórico anterior. A STM deve aceitar `STOP`, `CONFIG_PROFILE` e `START` a qualquer momento entre blocos.
 
-### Alteração obrigatória na STM32: bloco do perfil SLOW
+### Alterações obrigatórias na STM32: blocos de aquisição
 
 Os tamanhos dos blocos foram ajustados para reduzir a taxa de handshakes SPI. Portanto, no firmware STM32, a função que mapeia perfil para `frame_count` deve usar:
 
@@ -124,6 +124,15 @@ Consequências dos novos blocos:
 - `VERY_SLOW`: 64 frames, payload de 512 bytes, período de 25,6 ms e aproximadamente 39 blocos/s.
 
 Essas mudanças reduzem o número de handshakes `DRV`/`SYNC` e transações SPI, mantendo exatamente as mesmas taxas de amostragem e qualidade de sinal.
+
+O FAST de 512 frames pode permanecer implementado somente na STM32 para experimentos futuros:
+
+```c
+#define APP_ADC_MAX_FRAMES_PER_BLOCK  (512U)
+case APP_ACQUISITION_PROFILE_FAST: *frame_count = 512U; break;
+```
+
+`APP_SPI_MAX_ADC_PAYLOAD_BYTES` deve ser ao menos `4096U`. Os buffers TX e RX SPI devem suportar no mínimo **4102 bytes**: 1 byte simultâneo, 5 bytes de cabeçalho e 4096 bytes de payload. A ESP não solicita esse perfil atualmente.
 
 ## Acionamento PWM dos bicos
 
@@ -370,7 +379,7 @@ Ao processar `READ_BLOCK`, a STM copia o bloco mais antigo da fila para o buffer
 
 `DRDY` deve permanecer alto enquanto existir ao menos um bloco na fila e só deve baixar quando ela ficar vazia. Se a fila estiver cheia ao chegar um novo bloco ADC, a STM pode descartar o mais antigo ou o mais novo, desde que incremente a sequência normalmente; a ESP detectará a lacuna pelo byte `seq`.
 
-Dois slots absorvem jitter e reduzem perdas pontuais, mas não compensam uma diferença permanente de taxa. No perfil `FAST`, reservado para uso futuro, a ESP precisaria consumir cada bloco de 256 frames em menos de aproximadamente 2,56 ms. Nos perfis ativos, `MEDIUM` e `SLOW` possuem intervalo de 10,24 ms, e `VERY_SLOW` de 25,6 ms. A fila é margem de segurança, não substitui uma taxa SPI sustentada suficiente.
+Dois slots absorvem jitter e reduzem perdas pontuais, mas não compensam uma diferença permanente de taxa. `MEDIUM` e `SLOW` possuem intervalo de 10,24 ms, e `VERY_SLOW` de 25,6 ms. A fila é margem de segurança, não substitui uma taxa SPI sustentada suficiente.
 
 ## Regras de software na ESP32
 
