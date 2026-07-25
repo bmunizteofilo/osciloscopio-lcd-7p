@@ -11,6 +11,7 @@ static uint16_t *s_samples[4];
 /** @brief Estado publicado ao leitor após os dados estarem gravados. */
 static uint32_t s_sample_count;
 static uint32_t s_sample_head;
+static uint32_t s_total_frames;
 static uint32_t s_generation;
 static uint32_t s_frame_rate_hz;
 /** @brief Notificação unidirecional do Core 0 para a interface. */
@@ -41,6 +42,7 @@ void acquisition_history_reset(void)
 {
     __atomic_store_n(&s_sample_head, 0U, __ATOMIC_RELEASE);
     __atomic_store_n(&s_sample_count, 0U, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_total_frames, 0U, __ATOMIC_RELEASE);
     __atomic_store_n(&s_frame_rate_hz, 0U, __ATOMIC_RELEASE);
     __atomic_store_n(&s_cycle_done, false, __ATOMIC_RELEASE);
     __atomic_add_fetch(&s_generation, 1U, __ATOMIC_RELEASE);
@@ -56,6 +58,7 @@ esp_err_t acquisition_history_push_payload(const uint8_t *payload, uint16_t fram
 
     uint32_t count = __atomic_load_n(&s_sample_count, __ATOMIC_RELAXED);
     uint32_t head = __atomic_load_n(&s_sample_head, __ATOMIC_RELAXED);
+    const uint32_t total_frames = __atomic_load_n(&s_total_frames, __ATOMIC_RELAXED) + frame_count;
     for (uint16_t frame = 0; frame < frame_count; frame++) {
         uint32_t write_index;
         if (count < ACQUISITION_HISTORY_SAMPLES_PER_CHANNEL) {
@@ -73,6 +76,7 @@ esp_err_t acquisition_history_push_payload(const uint8_t *payload, uint16_t fram
     }
     __atomic_store_n(&s_sample_head, head, __ATOMIC_RELEASE);
     __atomic_store_n(&s_frame_rate_hz, frame_rate_hz, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_total_frames, total_frames, __ATOMIC_RELEASE);
     __atomic_store_n(&s_sample_count, count, __ATOMIC_RELEASE);
     return ESP_OK;
 }
@@ -85,6 +89,7 @@ bool acquisition_history_get_snapshot(acquisition_history_snapshot_t *out_snapsh
     }
     out_snapshot->sample_count = __atomic_load_n(&s_sample_count, __ATOMIC_ACQUIRE);
     out_snapshot->sample_head = __atomic_load_n(&s_sample_head, __ATOMIC_ACQUIRE);
+    out_snapshot->total_frames = __atomic_load_n(&s_total_frames, __ATOMIC_ACQUIRE);
     out_snapshot->generation = __atomic_load_n(&s_generation, __ATOMIC_ACQUIRE);
     out_snapshot->frame_rate_hz = __atomic_load_n(&s_frame_rate_hz, __ATOMIC_ACQUIRE);
     return true;

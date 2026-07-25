@@ -72,6 +72,7 @@
 #define OSC_BACKLIGHT_SLIDER_HEIGHT ((OSC_WAVEFORM_INNER_HEIGHT * 60) / 100)
 #define OSC_TRIGGER_HIDE_MS 5000
 #define OSC_TRIGGER_MARKER_WIDTH 5
+#define OSC_TRIGGER_SCAN_MAX_SAMPLES 2048U
 /** @brief Intervalo mínimo entre atualizações visuais da waveform ao vivo. */
 #define OSC_WAVEFORM_RENDER_INTERVAL_US (1000000ULL / 30ULL)
 
@@ -179,7 +180,14 @@ typedef struct {
     bool live_envelope_column_open;
     uint32_t waveform_sample_count;
     uint32_t waveform_sample_head;
+    uint32_t waveform_total_frames;
     uint32_t waveform_generation;
+    uint32_t trigger_scan_total_frames;
+    uint32_t trigger_latest_event_frame;
+    uint32_t trigger_candidate_event_frame;
+    bool trigger_scan_initialized;
+    bool trigger_latest_event_valid;
+    bool trigger_candidate_event_valid;
     uint32_t history_view_offset;
     int32_t history_drag_last_x;
     bool history_navigation_started;
@@ -207,6 +215,8 @@ static void osc_trigger_edge_event_cb(lv_event_t *event);
 static void osc_trigger_channel_event_cb(lv_event_t *event);
 static void osc_clear_measurements(uint8_t channel);
 static void osc_update_action_buttons(void);
+static void osc_trigger_reset_detector(void);
+static void osc_trigger_scan_new_samples(void);
 
 /** @brief Callback registrado pelo fluxo de telas para retornar ao menu principal. */
 static osc_menu_callback_t s_menu_callback;
@@ -405,7 +415,7 @@ static void osc_trigger_line_event_cb(lv_event_t *event)
         y = OSC_WAVEFORM_INNER_Y + OSC_WAVEFORM_INNER_HEIGHT - 2;
     }
     lv_obj_set_y(s_lvgl.trigger_line, y);
-    s_lvgl.trigger_single_captured = false;
+    osc_trigger_reset_detector();
     osc_show_trigger_line();
     lv_obj_invalidate(s_lvgl.waveform_renderer);
 }
@@ -420,7 +430,7 @@ static void osc_trigger_event_cb(lv_event_t *event)
     lv_obj_t *dropdown = lv_event_get_target_obj(event);
     s_lvgl.trigger_mode = (uint8_t)lv_dropdown_get_selected(dropdown);
     s_lvgl.trigger_enabled = s_lvgl.trigger_mode != 0;
-    s_lvgl.trigger_single_captured = false;
+    osc_trigger_reset_detector();
     osc_live_envelope_reset();
 
     if (s_lvgl.trigger_line == NULL) {
@@ -946,7 +956,7 @@ static void osc_create_trigger_line(lv_obj_t *parent)
 {
     s_lvgl.trigger_enabled = false;
     s_lvgl.trigger_rising = true;
-    s_lvgl.trigger_single_captured = false;
+    osc_trigger_reset_detector();
     s_lvgl.trigger_mode = 0;
     s_lvgl.trigger_channel = 0;
 
@@ -1026,7 +1036,7 @@ static void osc_trigger_edge_event_cb(lv_event_t *event)
 {
     lv_obj_t *dropdown = lv_event_get_target_obj(event);
     s_lvgl.trigger_rising = lv_dropdown_get_selected(dropdown) == 0;
-    s_lvgl.trigger_single_captured = false;
+    osc_trigger_reset_detector();
     if (s_lvgl.waveform_renderer != NULL) {
         lv_obj_invalidate(s_lvgl.waveform_renderer);
     }
@@ -1036,7 +1046,7 @@ static void osc_trigger_channel_event_cb(lv_event_t *event)
 {
     lv_obj_t *dropdown = lv_event_get_target_obj(event);
     s_lvgl.trigger_channel = (uint8_t)lv_dropdown_get_selected(dropdown);
-    s_lvgl.trigger_single_captured = false;
+    osc_trigger_reset_detector();
     if (s_lvgl.waveform_renderer != NULL) {
         lv_obj_invalidate(s_lvgl.waveform_renderer);
     }
@@ -1050,6 +1060,7 @@ static uint16_t osc_waveform_get_sample(uint8_t channel, uint32_t visual_index)
     const acquisition_history_snapshot_t snapshot = {
         .sample_count = s_lvgl.waveform_sample_count,
         .sample_head = s_lvgl.waveform_sample_head,
+        .total_frames = s_lvgl.waveform_total_frames,
         .generation = s_lvgl.waveform_generation,
         .frame_rate_hz = s_lvgl.input_sample_rate_hz,
     };
@@ -1207,14 +1218,43 @@ static void osc_waveform_draw_line(uint16_t *framebuffer, uint32_t stride_px, co
     }
 }
 
-/**
- * @brief Localiza a borda de trigger mais recente que permite centralizar a janela.
- */
-static bool osc_waveform_find_trigger(uint32_t displayed_samples, uint32_t *first_sample)
+/** @brief Reinicia a detecção incremental de borda. */
+static void osc_trigger_reset_detector(void)
 {
-    if (!s_lvgl.trigger_enabled || s_lvgl.paused || s_lvgl.trigger_channel >= 4 ||
-        s_lvgl.waveform_sample_count < displayed_samples) {
-        return false;
+    s_lvgl.trigger_single_captured = false;
+    s_lvgl.trigger_single_first_sample = 0U;
+    s_lvgl.trigger_scan_total_frames = 0U;
+    s_lvgl.trigger_latest_event_frame = 0U;
+    s_lvgl.trigger_candidate_event_frame = 0U;
+    s_lvgl.trigger_scan_initialized = false;
+    s_lvgl.trigger_latest_event_valid = false;
+    s_lvgl.trigger_candidate_event_valid = false;
+}
+
+/**
+ * @brief Examina somente frames novos em busca da borda de trigger.
+ *
+ * A rotina roda fora do callback de desenho para que o modo AUTO sem borda
+ * permaneça em varredura livre sem reler toda a janela de PSRAM a cada frame.
+ */
+static void osc_trigger_scan_new_samples(void)
+{
+    if (!s_lvgl.trigger_enabled || s_lvgl.paused || s_lvgl.trigger_channel >= 4U ||
+        s_lvgl.waveform_sample_count < 2U) {
+        return;
+    }
+
+    const uint32_t total = s_lvgl.waveform_total_frames;
+    const uint32_t history_first = total - s_lvgl.waveform_sample_count;
+    const uint32_t visible_samples = osc_waveform_visible_samples();
+    const uint32_t right_samples = visible_samples - (visible_samples / 2U) - 1U;
+    uint32_t scan_first = s_lvgl.trigger_scan_initialized ? s_lvgl.trigger_scan_total_frames :
+                                                          (total > 0U ? total - 1U : total);
+    if (scan_first < history_first) {
+        scan_first = history_first;
+    }
+    if (total - scan_first > OSC_TRIGGER_SCAN_MAX_SAMPLES) {
+        scan_first = total - OSC_TRIGGER_SCAN_MAX_SAMPLES;
     }
 
     int32_t threshold = lv_obj_get_y(s_lvgl.trigger_line) - OSC_WAVEFORM_INNER_Y;
@@ -1223,24 +1263,55 @@ static bool osc_waveform_find_trigger(uint32_t displayed_samples, uint32_t *firs
     } else if (threshold >= OSC_WAVEFORM_INNER_HEIGHT) {
         threshold = OSC_WAVEFORM_INNER_HEIGHT - 1;
     }
-
     const int32_t hysteresis = 4;
-    const uint32_t left_samples = displayed_samples / 2;
-    const uint32_t right_samples = displayed_samples - left_samples - 1;
-    const uint32_t last_event = s_lvgl.waveform_sample_count - right_samples - 1;
-
-    for (uint32_t index = last_event; index > left_samples; index--) {
-        const int32_t previous = osc_waveform_sample_to_y(osc_waveform_get_sample(s_lvgl.trigger_channel, index - 1));
-        const int32_t current = osc_waveform_sample_to_y(osc_waveform_get_sample(s_lvgl.trigger_channel, index));
+    for (uint32_t frame = scan_first; frame < total; frame++) {
+        const uint32_t visual_index = frame - history_first;
+        if (visual_index == 0U || visual_index >= s_lvgl.waveform_sample_count) {
+            continue;
+        }
+        const int32_t previous = osc_waveform_sample_to_y(
+            osc_waveform_get_sample(s_lvgl.trigger_channel, visual_index - 1U));
+        const int32_t current = osc_waveform_sample_to_y(
+            osc_waveform_get_sample(s_lvgl.trigger_channel, visual_index));
         const bool crossed = s_lvgl.trigger_rising ?
                              (previous >= threshold + hysteresis && current <= threshold - hysteresis) :
                              (previous <= threshold - hysteresis && current >= threshold + hysteresis);
-        if (crossed) {
-            *first_sample = index - left_samples;
-            return true;
+        if (crossed && !s_lvgl.trigger_candidate_event_valid) {
+            s_lvgl.trigger_candidate_event_frame = frame;
+            s_lvgl.trigger_candidate_event_valid = true;
         }
     }
-    return false;
+    if (s_lvgl.trigger_candidate_event_valid &&
+        total > s_lvgl.trigger_candidate_event_frame + right_samples) {
+        s_lvgl.trigger_latest_event_frame = s_lvgl.trigger_candidate_event_frame;
+        s_lvgl.trigger_latest_event_valid = true;
+        s_lvgl.trigger_candidate_event_valid = false;
+    }
+    if (s_lvgl.trigger_latest_event_valid && s_lvgl.trigger_latest_event_frame < history_first) {
+        s_lvgl.trigger_latest_event_valid = false;
+    }
+    s_lvgl.trigger_scan_total_frames = total;
+    s_lvgl.trigger_scan_initialized = true;
+}
+
+/**
+ * @brief Retorna a borda incremental mais recente quando já há pós-trigger suficiente.
+ */
+static bool osc_waveform_find_trigger(uint32_t displayed_samples, uint32_t *first_sample)
+{
+    if (!s_lvgl.trigger_enabled || s_lvgl.paused || s_lvgl.trigger_channel >= 4 ||
+        s_lvgl.waveform_sample_count < displayed_samples || !s_lvgl.trigger_latest_event_valid) {
+        return false;
+    }
+    const uint32_t left_samples = displayed_samples / 2;
+    const uint32_t right_samples = displayed_samples - left_samples - 1;
+    const uint32_t history_first = s_lvgl.waveform_total_frames - s_lvgl.waveform_sample_count;
+    const uint32_t event = s_lvgl.trigger_latest_event_frame;
+    if (event < history_first + left_samples || event + right_samples >= s_lvgl.waveform_total_frames) {
+        return false;
+    }
+    *first_sample = event - history_first - left_samples;
+    return true;
 }
 
 /**
@@ -1422,11 +1493,11 @@ static void osc_waveform_reset(void)
 {
     s_lvgl.waveform_sample_count = 0;
     s_lvgl.waveform_sample_head = 0;
+    s_lvgl.waveform_total_frames = 0;
     s_lvgl.waveform_generation = 0;
     s_lvgl.history_view_offset = 0;
     s_lvgl.history_navigation_started = false;
-    s_lvgl.trigger_single_captured = false;
-    s_lvgl.trigger_single_first_sample = 0;
+    osc_trigger_reset_detector();
     s_lvgl.last_plot_first_sample = 0;
     s_lvgl.last_plot_sample_count = 0;
     s_lvgl.last_plot_triggered = false;
@@ -1986,6 +2057,7 @@ void osc_refresh_acquisition_history(void)
         s_lvgl.waveform_generation = snapshot.generation;
         s_lvgl.history_view_offset = 0U;
         s_lvgl.history_navigation_started = false;
+        osc_trigger_reset_detector();
         s_lvgl.last_plot_sample_count = 0U;
         s_lvgl.last_plot_triggered = false;
         osc_live_envelope_reset();
@@ -1995,10 +2067,12 @@ void osc_refresh_acquisition_history(void)
                          snapshot.frame_rate_hz != s_lvgl.input_sample_rate_hz;
     s_lvgl.waveform_sample_count = snapshot.sample_count;
     s_lvgl.waveform_sample_head = snapshot.sample_head;
+    s_lvgl.waveform_total_frames = snapshot.total_frames;
     if (snapshot.frame_rate_hz > 0U) {
         s_lvgl.input_sample_rate_hz = snapshot.frame_rate_hz;
     }
     if (changed) {
+        osc_trigger_scan_new_samples();
         osc_update_buffer_label();
         osc_request_live_waveform_render();
     }

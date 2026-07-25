@@ -66,6 +66,8 @@
 #define APP_SPI_ACQUISITION_PRIORITY 8
 /** @brief Período da telemetria temporária de taxa de aquisição. */
 #define APP_SPI_ACQUISITION_METRICS_PERIOD_US (3ULL * 1000ULL * 1000ULL)
+/** @brief Habilita o log periódico da taxa efetiva de blocos ADC via SPI. */
+#define APP_SPI_ACQUISITION_METRICS_LOG 0
 
 /** @brief Tag usada nos registros de inicialização da aplicação. */
 static const char *TAG = "app";
@@ -448,13 +450,17 @@ static void app_spi_acquisition_task(void *argument)
         return;
     }
     acquisition_stream_set_spi_task(xTaskGetCurrentTaskHandle());
+#if APP_SPI_ACQUISITION_METRICS_LOG
     static const uint16_t frames_per_profile[] = {256U, 256U, 128U, 64U};
+#endif
     bool capturing = false;
     uint8_t active_profile = 0;
+#if APP_SPI_ACQUISITION_METRICS_LOG
     uint32_t received_blocks = 0;
     uint32_t received_frames = 0;
     uint32_t read_errors = 0;
     uint64_t metrics_start_us = (uint64_t)esp_timer_get_time();
+#endif
     for (;;) {
         acquisition_stream_command_t command;
         while (acquisition_stream_take_command(&command)) {
@@ -468,9 +474,11 @@ static void app_spi_acquisition_task(void *argument)
                 capturing = false;
                 acquisition_stream_clear();
                 acquisition_history_reset();
+#if APP_SPI_ACQUISITION_METRICS_LOG
                 received_blocks = 0;
                 received_frames = 0;
                 read_errors = 0;
+#endif
             } else if (command.type == ACQUISITION_STREAM_COMMAND_RECONFIGURE_PROFILE &&
                        command.start_config.profile < 4U && capturing) {
                 if (app_spi_stop_acquisition(context->device) == ESP_OK) {
@@ -478,10 +486,12 @@ static void app_spi_acquisition_task(void *argument)
                     acquisition_history_reset();
                     if (app_spi_start_acquisition(context->device, command.start_config.profile) == ESP_OK) {
                         active_profile = command.start_config.profile;
+#if APP_SPI_ACQUISITION_METRICS_LOG
                         received_blocks = 0;
                         received_frames = 0;
                         read_errors = 0;
                         metrics_start_us = (uint64_t)esp_timer_get_time();
+#endif
                         ESP_LOGI(TAG, "Aquisicao ADC reiniciada no perfil %u", active_profile);
                     } else {
                         capturing = false;
@@ -501,10 +511,12 @@ static void app_spi_acquisition_task(void *argument)
                     app_spi_start_pwm(context->device, &command.start_config) == ESP_OK) {
                     active_profile = command.start_config.profile;
                     capturing = true;
+#if APP_SPI_ACQUISITION_METRICS_LOG
                     received_blocks = 0;
                     received_frames = 0;
                     read_errors = 0;
                     metrics_start_us = (uint64_t)esp_timer_get_time();
+#endif
                     ESP_LOGI(TAG, "Aquisicao SPI iniciada no perfil %u", active_profile);
                 } else {
                     capturing = false;
@@ -517,14 +529,19 @@ static void app_spi_acquisition_task(void *argument)
         if (capturing &&
             driver_gpio_get_level(APP_SPI_DRV_GPIO, &data_ready) == ESP_OK && data_ready) {
             if (app_spi_read_block(context->device, active_profile) == ESP_OK) {
+#if APP_SPI_ACQUISITION_METRICS_LOG
                 received_blocks++;
                 received_frames += frames_per_profile[active_profile];
+#endif
             } else {
+#if APP_SPI_ACQUISITION_METRICS_LOG
                 read_errors++;
+#endif
                 ESP_LOGW(TAG, "falha ao ler bloco SPI");
             }
         }
 
+#if APP_SPI_ACQUISITION_METRICS_LOG
         const uint64_t now_us = (uint64_t)esp_timer_get_time();
         if (capturing && now_us - metrics_start_us >= APP_SPI_ACQUISITION_METRICS_PERIOD_US) {
             const uint64_t elapsed_us = now_us - metrics_start_us;
@@ -541,6 +558,7 @@ static void app_spi_acquisition_task(void *argument)
             read_errors = 0;
             metrics_start_us = now_us;
         }
+#endif
 
         if (data_ready) {
             continue;

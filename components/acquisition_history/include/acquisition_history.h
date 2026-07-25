@@ -17,6 +17,7 @@ extern "C" {
 typedef struct {
     uint32_t sample_count;
     uint32_t sample_head;
+    uint32_t total_frames;
     uint32_t generation;
     uint32_t frame_rate_hz;
 } acquisition_history_snapshot_t;
