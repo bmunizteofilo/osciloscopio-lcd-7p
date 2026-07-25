@@ -6,7 +6,7 @@
   "toolVendor": "NXP Semiconductors",
   "createDate": "2026-07-11",
   "createVersion": "2.0.0",
-  "lastModified": "2026-07-22T04:59:28.727Z",
+  "lastModified": "2026-07-25T22:33:13.708Z",
   "description": "",
   "metadata": {
     "board": {
@@ -247,14 +247,77 @@
         },
         "children": [
           {
-            "id": "label_MRJTG2Q75BBQ",
+            "id": "led_MRXU2X18IAXI",
+            "type": "led",
+            "name": "led_power_control",
+            "width": 15,
+            "width_unit": "px",
+            "height": 15,
+            "height_unit": "px",
+            "x": 613,
+            "x_unit": "px",
+            "y": 33,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT"
+              }
+            },
+            "color": "#ef1212"
+          },
+          {
+            "id": "led_MRXU2JHS8OK3",
+            "type": "led",
+            "name": "led_bluetooth",
+            "width": 15,
+            "width_unit": "px",
+            "height": 15,
+            "height_unit": "px",
+            "x": 417,
+            "x_unit": "px",
+            "y": 33,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT"
+              }
+            },
+            "color": "#ef1212"
+          },
+          {
+            "id": "led_MRXU29JVIJR4",
+            "type": "led",
+            "name": "led_wifi",
+            "width": 15,
+            "width_unit": "px",
+            "height": 15,
+            "height_unit": "px",
+            "x": 252,
+            "x_unit": "px",
+            "y": 33,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT"
+              }
+            },
+            "color": "#ef1212"
+          },
+          {
+            "id": "label_MRXU0TOFEZUQ",
             "type": "label",
-            "name": "label_status_bluetooth",
+            "name": "label_power_control_status",
             "width": 0,
             "width_unit": "content",
             "height": 0,
             "height_unit": "content",
-            "x": 427,
+            "x": 478,
             "x_unit": "px",
             "y": 31,
             "y_unit": "px",
@@ -267,7 +330,30 @@
                 "text_size": 16
               }
             },
-            "text": "Bluetooth - Offline"
+            "text": "Power Control"
+          },
+          {
+            "id": "label_MRJTG2Q75BBQ",
+            "type": "label",
+            "name": "label_status_bluetooth",
+            "width": 0,
+            "width_unit": "content",
+            "height": 0,
+            "height_unit": "content",
+            "x": 319,
+            "x_unit": "px",
+            "y": 31,
+            "y_unit": "px",
+            "align": "LV_ALIGN_TOP_LEFT",
+            "style": {
+              "LV_PART_MAIN|LV_STATE_DEFAULT": {
+                "part": "LV_PART_MAIN",
+                "state": "LV_STATE_DEFAULT",
+                "text_color": "#ffffff",
+                "text_size": 16
+              }
+            },
+            "text": "Bluetooth "
           },
           {
             "id": "label_MRJTEVDVG3C1",
@@ -277,7 +363,7 @@
             "width_unit": "content",
             "height": 0,
             "height_unit": "content",
-            "x": 252,
+            "x": 202,
             "x_unit": "px",
             "y": 31,
             "y_unit": "px",
@@ -291,7 +377,7 @@
                 "text_color": "#ffffff"
               }
             },
-            "text": "Wifi - Offline"
+            "text": "Wifi "
           },
           {
             "id": "label_MRGYAD5J1K6R",

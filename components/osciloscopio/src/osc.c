@@ -1,4 +1,5 @@
 #include "osc.h"
+#include "acquisition_history.h"
 #include "gt911_touch.h"
 #include <stdbool.h>
 #include <math.h>
@@ -54,6 +55,7 @@
 #define OSC_ACTION_BUTTON_HEIGHT 42
 #define OSC_ACTION_BUTTON_Y (OSC_MEASUREMENTS_Y + 4)
 #define OSC_CHART_POINT_COUNT OSC_WAVEFORM_INNER_WIDTH
+#define OSC_LIVE_ENVELOPE_VALUE_COUNT (4U * OSC_WAVEFORM_INNER_WIDTH)
 #define OSC_HISTORY_BYTES_PER_CHANNEL (500U * 1024U)
 #define OSC_HISTORY_SAMPLE_COUNT (OSC_HISTORY_BYTES_PER_CHANNEL / sizeof(uint16_t))
 #define OSC_DEFAULT_INPUT_SAMPLE_RATE_HZ 2000U
@@ -70,6 +72,8 @@
 #define OSC_BACKLIGHT_SLIDER_HEIGHT ((OSC_WAVEFORM_INNER_HEIGHT * 60) / 100)
 #define OSC_TRIGGER_HIDE_MS 5000
 #define OSC_TRIGGER_MARKER_WIDTH 5
+/** @brief Intervalo mínimo entre atualizações visuais da waveform ao vivo. */
+#define OSC_WAVEFORM_RENDER_INTERVAL_US (1000000ULL / 30ULL)
 
 typedef enum {
     OSC_CURSOR_MODE_OFF = 0,
@@ -164,15 +168,25 @@ typedef struct {
     uint32_t time_base_us_per_div;
     uint32_t voltage_base_mv_per_div;
     uint32_t input_sample_rate_hz;
-    uint16_t *waveform_samples[4];
+    uint16_t *live_envelope_min;
+    uint16_t *live_envelope_max;
+    uint16_t *live_envelope_first;
+    uint16_t *live_envelope_last;
+    uint32_t live_envelope_window_samples;
+    uint32_t live_envelope_progress;
+    uint16_t live_envelope_head;
+    uint16_t live_envelope_column_count;
+    bool live_envelope_column_open;
     uint32_t waveform_sample_count;
     uint32_t waveform_sample_head;
+    uint32_t waveform_generation;
     uint32_t history_view_offset;
     int32_t history_drag_last_x;
     bool history_navigation_started;
     uint32_t last_plot_first_sample;
     uint32_t last_plot_sample_count;
     bool last_plot_triggered;
+    uint64_t last_live_render_request_us;
     SemaphoreHandle_t lock;
     TaskHandle_t task;
 } osc_context_t;
@@ -187,6 +201,8 @@ static void osc_update_cursor_label(void);
 static void osc_reset_cursor_positions(void);
 static void osc_waveform_reset(void);
 static void osc_update_buffer_label(void);
+static void osc_live_envelope_reset(void);
+static void osc_request_live_waveform_render(void);
 static void osc_trigger_edge_event_cb(lv_event_t *event);
 static void osc_trigger_channel_event_cb(lv_event_t *event);
 static void osc_clear_measurements(uint8_t channel);
@@ -194,6 +210,10 @@ static void osc_update_action_buttons(void);
 
 /** @brief Callback registrado pelo fluxo de telas para retornar ao menu principal. */
 static osc_menu_callback_t s_menu_callback;
+/** @brief Callback registrado pelo fluxo de telas para encerrar o ciclo atual. */
+static osc_cycle_finished_callback_t s_cycle_finished_callback;
+/** @brief Callback chamado ao trocar o perfil ADC da base de tempo. */
+static osc_profile_changed_callback_t s_profile_changed_callback;
 
 static uint32_t osc_theme_waveform_bg(void)
 {
@@ -251,6 +271,11 @@ static void osc_time_base_event_cb(lv_event_t *event)
 
     if (selected < (sizeof(OSC_TIME_BASE_US_PER_DIV) / sizeof(OSC_TIME_BASE_US_PER_DIV[0]))) {
         s_lvgl.time_base_us_per_div = OSC_TIME_BASE_US_PER_DIV[selected];
+        osc_live_envelope_reset();
+        const uint8_t new_profile = osc_get_acquisition_profile();
+        if (s_profile_changed_callback != NULL) {
+            s_profile_changed_callback(new_profile);
+        }
         if (s_lvgl.waveform_renderer != NULL) {
             lv_obj_invalidate(s_lvgl.waveform_renderer);
         }
@@ -396,6 +421,7 @@ static void osc_trigger_event_cb(lv_event_t *event)
     s_lvgl.trigger_mode = (uint8_t)lv_dropdown_get_selected(dropdown);
     s_lvgl.trigger_enabled = s_lvgl.trigger_mode != 0;
     s_lvgl.trigger_single_captured = false;
+    osc_live_envelope_reset();
 
     if (s_lvgl.trigger_line == NULL) {
         return;
@@ -1021,8 +1047,13 @@ static void osc_trigger_channel_event_cb(lv_event_t *event)
  */
 static uint16_t osc_waveform_get_sample(uint8_t channel, uint32_t visual_index)
 {
-    const uint32_t physical_index = (s_lvgl.waveform_sample_head + visual_index) % OSC_HISTORY_SAMPLE_COUNT;
-    return s_lvgl.waveform_samples[channel][physical_index];
+    const acquisition_history_snapshot_t snapshot = {
+        .sample_count = s_lvgl.waveform_sample_count,
+        .sample_head = s_lvgl.waveform_sample_head,
+        .generation = s_lvgl.waveform_generation,
+        .frame_rate_hz = s_lvgl.input_sample_rate_hz,
+    };
+    return acquisition_history_get_sample(channel, visual_index, &snapshot);
 }
 
 /**
@@ -1033,22 +1064,12 @@ static uint16_t osc_waveform_get_sample(uint8_t channel, uint32_t visual_index)
  */
 static void osc_waveform_push_samples(const uint16_t samples[4])
 {
-    uint32_t write_index;
-    if (s_lvgl.waveform_sample_count < OSC_HISTORY_SAMPLE_COUNT) {
-        write_index = (s_lvgl.waveform_sample_head + s_lvgl.waveform_sample_count) % OSC_HISTORY_SAMPLE_COUNT;
-        s_lvgl.waveform_sample_count++;
-    } else {
-        write_index = s_lvgl.waveform_sample_head;
-        s_lvgl.waveform_sample_head = (s_lvgl.waveform_sample_head + 1) % OSC_HISTORY_SAMPLE_COUNT;
+    uint8_t payload[8];
+    for (uint8_t channel = 0; channel < 4U; channel++) {
+        payload[channel * 2U] = (uint8_t)(samples[channel] & 0xffU);
+        payload[channel * 2U + 1U] = (uint8_t)(samples[channel] >> 8U);
     }
-
-    for (uint8_t channel = 0; channel < 4; channel++) {
-        uint16_t sample = samples[channel];
-        if (sample > (OSC_ADC_CENTER * 2)) {
-            sample = OSC_ADC_CENTER * 2;
-        }
-        s_lvgl.waveform_samples[channel][write_index] = sample;
-    }
+    (void)acquisition_history_push_payload(payload, 1U, s_lvgl.input_sample_rate_hz);
 }
 
 static uint32_t osc_waveform_visible_samples(void)
@@ -1060,6 +1081,41 @@ static uint32_t osc_waveform_visible_samples(void)
         samples = OSC_HISTORY_SAMPLE_COUNT;
     }
     return (uint32_t)samples;
+}
+
+/**
+ * @brief Reinicia o envelope de colunas usado pela visualizacao em tempo real.
+ *
+ * O historico completo nao e alterado. O envelope e apenas uma representacao
+ * estavel para os pixels atualmente desenhados na tela.
+ */
+static void osc_live_envelope_reset(void)
+{
+    s_lvgl.live_envelope_window_samples = osc_waveform_visible_samples();
+    s_lvgl.live_envelope_progress = 0;
+    s_lvgl.live_envelope_head = 0;
+    s_lvgl.live_envelope_column_count = 0;
+    s_lvgl.live_envelope_column_open = false;
+}
+
+/**
+ * @brief Solicita redesenho da waveform respeitando a taxa visual máxima.
+ *
+ * A aquisição e o histórico continuam recebendo todos os frames; apenas a
+ * invalidação do objeto LVGL é limitada para evitar uma esteira excessivamente
+ * rápida e renderizações redundantes.
+ */
+static void osc_request_live_waveform_render(void)
+{
+    if (s_lvgl.waveform_renderer == NULL) {
+        return;
+    }
+    const uint64_t now_us = (uint64_t)esp_timer_get_time();
+    if (s_lvgl.last_live_render_request_us == 0U ||
+        now_us - s_lvgl.last_live_render_request_us >= OSC_WAVEFORM_RENDER_INTERVAL_US) {
+        s_lvgl.last_live_render_request_us = now_us;
+        lv_obj_invalidate(s_lvgl.waveform_renderer);
+    }
 }
 
 static void osc_update_buffer_label(void)
@@ -1244,6 +1300,36 @@ static void osc_waveform_draw_event_cb(lv_event_t *event)
         osc_waveform_set_pixel(framebuffer, stride_px, buffer_area, clip_area, OSC_WAVEFORM_CENTER_X, y, center);
     }
 
+    if (false && !s_lvgl.paused && !s_lvgl.trigger_enabled && s_lvgl.live_envelope_column_count > 0U &&
+        s_lvgl.live_envelope_min != NULL && s_lvgl.live_envelope_max != NULL &&
+        s_lvgl.live_envelope_first != NULL && s_lvgl.live_envelope_last != NULL) {
+        for (uint16_t visual_column = 0; visual_column < s_lvgl.live_envelope_column_count; visual_column++) {
+            const uint16_t column = (uint16_t)((s_lvgl.live_envelope_head + visual_column) % OSC_WAVEFORM_INNER_WIDTH);
+            const int32_t x = OSC_WAVEFORM_INNER_X + visual_column;
+            for (uint8_t channel = 0; channel < 4; channel++) {
+                if (!s_lvgl.channel_visible[channel]) {
+                    continue;
+                }
+                const size_t offset = (size_t)channel * OSC_WAVEFORM_INNER_WIDTH + column;
+                const uint16_t color = lv_color_to_u16(lv_color_hex(OSC_CHANNEL_COLORS[channel]));
+                if (visual_column > 0U) {
+                    const uint16_t previous_column = (uint16_t)((s_lvgl.live_envelope_head + visual_column - 1U) %
+                                                                OSC_WAVEFORM_INNER_WIDTH);
+                    const size_t previous_offset = (size_t)channel * OSC_WAVEFORM_INNER_WIDTH + previous_column;
+                    osc_waveform_draw_line(framebuffer, stride_px, buffer_area, clip_area, x - 1,
+                                           OSC_WAVEFORM_INNER_Y + osc_waveform_sample_to_y(s_lvgl.live_envelope_last[previous_offset]), x,
+                                           OSC_WAVEFORM_INNER_Y + osc_waveform_sample_to_y(s_lvgl.live_envelope_first[offset]), color);
+                }
+                osc_waveform_draw_line(framebuffer, stride_px, buffer_area, clip_area, x,
+                                       OSC_WAVEFORM_INNER_Y + osc_waveform_sample_to_y(s_lvgl.live_envelope_min[offset]), x,
+                                       OSC_WAVEFORM_INNER_Y + osc_waveform_sample_to_y(s_lvgl.live_envelope_max[offset]), color);
+            }
+        }
+        s_lvgl.last_plot_sample_count = 0;
+        s_lvgl.last_plot_triggered = false;
+        return;
+    }
+
     const uint32_t visible_samples = osc_waveform_visible_samples();
     if (s_lvgl.waveform_sample_count < 2) {
         return;
@@ -1284,19 +1370,47 @@ static void osc_waveform_draw_event_cb(lv_event_t *event)
     const uint16_t first_x = OSC_WAVEFORM_INNER_X;
     const uint16_t rendered_width = 1 + (uint16_t)(((uint64_t)(displayed_samples - 1) * (OSC_CHART_POINT_COUNT - 1)) /
                                                     (visible_samples - 1));
+    if (rendered_width < 2U) {
+        return;
+    }
 
-    for (uint16_t sample_index = 1; sample_index < rendered_width; sample_index++) {
-        const uint32_t source0 = first_sample + (((uint64_t)(sample_index - 1) * (displayed_samples - 1)) / (rendered_width - 1));
-        const uint32_t source1 = first_sample + (((uint64_t)sample_index * (displayed_samples - 1)) / (rendered_width - 1));
-        const int32_t x0 = first_x + sample_index - 1;
-        const int32_t x1 = first_x + sample_index;
+    bool previous_valid[4] = {false};
+    uint16_t previous_last[4] = {0};
+    for (uint16_t column = 0; column < rendered_width; column++) {
+        const uint32_t source_first = first_sample +
+                                      (((uint64_t)column * (displayed_samples - 1)) / (rendered_width - 1));
+        const uint32_t source_last = first_sample +
+                                     (((uint64_t)(column + 1U) * (displayed_samples - 1)) / (rendered_width - 1));
+        const int32_t x = first_x + column;
         for (uint8_t channel = 0; channel < 4; channel++) {
-            if (s_lvgl.channel_visible[channel]) {
-                const uint16_t color = lv_color_to_u16(lv_color_hex(OSC_CHANNEL_COLORS[channel]));
-                osc_waveform_draw_line(framebuffer, stride_px, buffer_area, clip_area,
-                                             x0, OSC_WAVEFORM_INNER_Y + osc_waveform_sample_to_y(osc_waveform_get_sample(channel, source0)),
-                                             x1, OSC_WAVEFORM_INNER_Y + osc_waveform_sample_to_y(osc_waveform_get_sample(channel, source1)), color);
+            if (!s_lvgl.channel_visible[channel]) {
+                continue;
             }
+            uint16_t minimum = osc_waveform_get_sample(channel, source_first);
+            uint16_t maximum = minimum;
+            const uint16_t first_value = minimum;
+            uint16_t last_value = minimum;
+            for (uint32_t source = source_first + 1U; source <= source_last; source++) {
+                const uint16_t value = osc_waveform_get_sample(channel, source);
+                if (value < minimum) {
+                    minimum = value;
+                }
+                if (value > maximum) {
+                    maximum = value;
+                }
+                last_value = value;
+            }
+            const uint16_t color = lv_color_to_u16(lv_color_hex(OSC_CHANNEL_COLORS[channel]));
+            if (previous_valid[channel]) {
+                osc_waveform_draw_line(framebuffer, stride_px, buffer_area, clip_area, x - 1,
+                                       OSC_WAVEFORM_INNER_Y + osc_waveform_sample_to_y(previous_last[channel]), x,
+                                       OSC_WAVEFORM_INNER_Y + osc_waveform_sample_to_y(first_value), color);
+            }
+            osc_waveform_draw_line(framebuffer, stride_px, buffer_area, clip_area, x,
+                                   OSC_WAVEFORM_INNER_Y + osc_waveform_sample_to_y(minimum), x,
+                                   OSC_WAVEFORM_INNER_Y + osc_waveform_sample_to_y(maximum), color);
+            previous_last[channel] = last_value;
+            previous_valid[channel] = true;
         }
     }
 }
@@ -1308,8 +1422,19 @@ static void osc_waveform_reset(void)
 {
     s_lvgl.waveform_sample_count = 0;
     s_lvgl.waveform_sample_head = 0;
+    s_lvgl.waveform_generation = 0;
     s_lvgl.history_view_offset = 0;
     s_lvgl.history_navigation_started = false;
+    s_lvgl.trigger_single_captured = false;
+    s_lvgl.trigger_single_first_sample = 0;
+    s_lvgl.last_plot_first_sample = 0;
+    s_lvgl.last_plot_sample_count = 0;
+    s_lvgl.last_plot_triggered = false;
+    s_lvgl.last_live_render_request_us = 0;
+    osc_live_envelope_reset();
+    for (uint8_t channel = 0; channel < 4; channel++) {
+        osc_clear_measurements(channel);
+    }
     osc_update_buffer_label();
 }
 
@@ -1324,13 +1449,27 @@ static void osc_create_waveform_renderer(lv_obj_t *parent)
         s_waveform_y_lookup[sample] = (uint16_t)((((OSC_ADC_CENTER * 2) - sample) * (OSC_WAVEFORM_INNER_HEIGHT - 1)) /
                                                   (OSC_ADC_CENTER * 2));
     }
-    for (uint8_t channel = 0; channel < 4; channel++) {
-        s_lvgl.waveform_samples[channel] = heap_caps_malloc(OSC_HISTORY_BYTES_PER_CHANNEL, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (s_lvgl.waveform_samples[channel] == NULL) {
-            ESP_LOGE(TAG, "sem PSRAM para o historico do canal %u", (unsigned)(channel + 1));
-            return;
-        }
+    s_lvgl.live_envelope_min = heap_caps_malloc(OSC_LIVE_ENVELOPE_VALUE_COUNT * sizeof(uint16_t),
+                                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    s_lvgl.live_envelope_max = heap_caps_malloc(OSC_LIVE_ENVELOPE_VALUE_COUNT * sizeof(uint16_t),
+                                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    s_lvgl.live_envelope_first = heap_caps_malloc(OSC_LIVE_ENVELOPE_VALUE_COUNT * sizeof(uint16_t),
+                                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    s_lvgl.live_envelope_last = heap_caps_malloc(OSC_LIVE_ENVELOPE_VALUE_COUNT * sizeof(uint16_t),
+                                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (s_lvgl.live_envelope_min == NULL || s_lvgl.live_envelope_max == NULL ||
+        s_lvgl.live_envelope_first == NULL || s_lvgl.live_envelope_last == NULL) {
+        ESP_LOGW(TAG, "sem PSRAM para envelope visual; usando renderer legado");
+        heap_caps_free(s_lvgl.live_envelope_min);
+        heap_caps_free(s_lvgl.live_envelope_max);
+        heap_caps_free(s_lvgl.live_envelope_first);
+        heap_caps_free(s_lvgl.live_envelope_last);
+        s_lvgl.live_envelope_min = NULL;
+        s_lvgl.live_envelope_max = NULL;
+        s_lvgl.live_envelope_first = NULL;
+        s_lvgl.live_envelope_last = NULL;
     }
+
     s_lvgl.waveform_renderer = lv_obj_create(parent);
     lv_obj_remove_style_all(s_lvgl.waveform_renderer);
     lv_obj_set_size(s_lvgl.waveform_renderer, OSC_WAVEFORM_INNER_WIDTH, OSC_WAVEFORM_INNER_HEIGHT);
@@ -1468,34 +1607,57 @@ static void osc_menu_button_event_cb(lv_event_t *event)
 }
 
 /**
- * @brief Cria os três botões de ação na metade inferior direita.
+ * @brief Encerra manualmente o ciclo pela ação registrada pela aplicação.
+ *
+ * @param[in] event Evento LVGL do botão Terminar Ciclo.
+ */
+static void osc_cycle_finished_button_event_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_cycle_finished_callback != NULL) {
+        s_cycle_finished_callback(false);
+    }
+}
+
+/**
+ * @brief Cria os botões de ação roláveis na metade inferior direita.
  *
  * @param[in] parent Tela principal do osciloscópio.
  */
 static void osc_create_action_buttons(lv_obj_t *parent)
 {
-    static const char *const labels[] = {"Pausar", "Parar Ciclo", "Menu"};
+    static const char *const labels[] = {"Pausar", "Parar Ciclo", "Menu", "Terminar Ciclo"};
     static lv_event_cb_t const callbacks[] = {
         osc_pause_button_event_cb,
         osc_stop_cycle_button_event_cb,
         osc_menu_button_event_cb,
+        osc_cycle_finished_button_event_cb,
     };
     lv_obj_t **const buttons[] = {
         &s_lvgl.pause_button,
         &s_lvgl.stop_cycle_button,
+        NULL,
         NULL,
     };
     lv_obj_t **const button_labels[] = {
         &s_lvgl.pause_button_label,
         &s_lvgl.stop_cycle_button_label,
         NULL,
+        NULL,
     };
-    for (uint8_t index = 0; index < 3; index++) {
-        lv_obj_t *button = lv_button_create(parent);
+    lv_obj_t *container = lv_obj_create(parent);
+    lv_obj_remove_style_all(container);
+    lv_obj_set_size(container, OSC_ACTION_PANEL_WIDTH, OSC_ACTION_BUTTON_HEIGHT + 8);
+    lv_obj_set_pos(container, OSC_ACTION_PANEL_X, OSC_ACTION_BUTTON_Y - 4);
+    lv_obj_set_scroll_dir(container, LV_DIR_HOR);
+    lv_obj_set_scrollbar_mode(container, LV_SCROLLBAR_MODE_ACTIVE);
+    lv_obj_set_style_pad_all(container, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, LV_PART_MAIN);
+
+    for (uint8_t index = 0; index < 4; index++) {
+        lv_obj_t *button = lv_button_create(container);
         lv_obj_set_size(button, OSC_ACTION_BUTTON_WIDTH, OSC_ACTION_BUTTON_HEIGHT);
-        lv_obj_set_pos(button, OSC_ACTION_PANEL_X + OSC_ACTION_BUTTON_GAP +
-                                index * (OSC_ACTION_BUTTON_WIDTH + OSC_ACTION_BUTTON_GAP),
-                       OSC_ACTION_BUTTON_Y);
+        lv_obj_set_pos(button, OSC_ACTION_BUTTON_GAP + index * (OSC_ACTION_BUTTON_WIDTH + OSC_ACTION_BUTTON_GAP), 4);
         lv_obj_set_style_border_width(button, 1, LV_PART_MAIN);
         lv_obj_set_style_border_color(button, lv_color_hex(0x606060), LV_PART_MAIN);
         lv_obj_set_style_radius(button, 5, LV_PART_MAIN);
@@ -1564,6 +1726,9 @@ static uint32_t osc_counts_to_mv(uint32_t counts)
 
 static void osc_clear_measurements(uint8_t channel)
 {
+    if (channel >= 4U || s_lvgl.measurement_labels[channel][0] == NULL) {
+        return;
+    }
     lv_label_set_text(s_lvgl.measurement_labels[channel][0], "RMS 0.00");
     lv_label_set_text(s_lvgl.measurement_labels[channel][1], "PK+ 0.00");
     lv_label_set_text(s_lvgl.measurement_labels[channel][2], "PK- 0.00");
@@ -1691,6 +1856,26 @@ void osc_set_menu_callback(osc_menu_callback_t callback)
     s_menu_callback = callback;
 }
 
+/** @brief Define a ação executada ao encerrar manualmente o ciclo. */
+void osc_set_cycle_finished_callback(osc_cycle_finished_callback_t callback)
+{
+    s_cycle_finished_callback = callback;
+}
+
+/** @brief Define a ação executada ao trocar o perfil ADC derivado da base de tempo. */
+void osc_set_profile_changed_callback(osc_profile_changed_callback_t callback)
+{
+    s_profile_changed_callback = callback;
+}
+
+/** @brief Notifica que a STM32 concluiu uma execução PWM finita. */
+void osc_notify_cycle_done(void)
+{
+    if (s_cycle_finished_callback != NULL) {
+        s_cycle_finished_callback(true);
+    }
+}
+
 /** @brief Destrói a tela do osciloscópio, seus timers e buffers de histórico. */
 void osc_destroy(void)
 {
@@ -1706,11 +1891,10 @@ void osc_destroy(void)
     if (s_lvgl.screen != NULL) {
         lv_obj_delete(s_lvgl.screen);
     }
-    for (uint8_t channel = 0; channel < 4; channel++) {
-        if (s_lvgl.waveform_samples[channel] != NULL) {
-            heap_caps_free(s_lvgl.waveform_samples[channel]);
-        }
-    }
+    heap_caps_free(s_lvgl.live_envelope_min);
+    heap_caps_free(s_lvgl.live_envelope_max);
+    heap_caps_free(s_lvgl.live_envelope_first);
+    heap_caps_free(s_lvgl.live_envelope_last);
     const wt32s3_lcd_handle_t lcd = s_lvgl.lcd;
     s_lvgl = (osc_context_t){0};
     s_lvgl.lcd = lcd;
@@ -1775,11 +1959,49 @@ lv_obj_t *osc_get_screen(void)
 esp_err_t osc_set_input_sample_rate(uint32_t sample_rate_hz)
 {
     ESP_RETURN_ON_FALSE(sample_rate_hz > 0, ESP_ERR_INVALID_ARG, TAG, "taxa de amostragem invalida");
+    if (s_lvgl.input_sample_rate_hz == sample_rate_hz) {
+        return ESP_OK;
+    }
     s_lvgl.input_sample_rate_hz = sample_rate_hz;
+    osc_live_envelope_reset();
     if (s_lvgl.waveform_renderer != NULL) {
         lv_obj_invalidate(s_lvgl.waveform_renderer);
     }
     return ESP_OK;
+}
+
+/**
+ * @brief Atualiza o snapshot visual do histórico preenchido pela task SPI.
+ *
+ * Esta função não percorre nem copia frames: apenas publica no renderer a
+ * posição já estável do ring buffer PSRAM.
+ */
+void osc_refresh_acquisition_history(void)
+{
+    acquisition_history_snapshot_t snapshot;
+    if (!acquisition_history_get_snapshot(&snapshot) || s_lvgl.waveform_renderer == NULL) {
+        return;
+    }
+    if (snapshot.generation != s_lvgl.waveform_generation) {
+        s_lvgl.waveform_generation = snapshot.generation;
+        s_lvgl.history_view_offset = 0U;
+        s_lvgl.history_navigation_started = false;
+        s_lvgl.last_plot_sample_count = 0U;
+        s_lvgl.last_plot_triggered = false;
+        osc_live_envelope_reset();
+    }
+    const bool changed = snapshot.sample_count != s_lvgl.waveform_sample_count ||
+                         snapshot.sample_head != s_lvgl.waveform_sample_head ||
+                         snapshot.frame_rate_hz != s_lvgl.input_sample_rate_hz;
+    s_lvgl.waveform_sample_count = snapshot.sample_count;
+    s_lvgl.waveform_sample_head = snapshot.sample_head;
+    if (snapshot.frame_rate_hz > 0U) {
+        s_lvgl.input_sample_rate_hz = snapshot.frame_rate_hz;
+    }
+    if (changed) {
+        osc_update_buffer_label();
+        osc_request_live_waveform_render();
+    }
 }
 
 /**
@@ -1796,6 +2018,39 @@ esp_err_t osc_push_frame(const uint16_t samples[4])
     }
     osc_waveform_push_samples(samples);
     osc_update_buffer_label();
-    lv_obj_invalidate(s_lvgl.waveform_renderer);
+    osc_request_live_waveform_render();
     return ESP_OK;
+}
+
+/**
+ * @brief Insere vários frames no histórico e solicita um único redesenho.
+ */
+esp_err_t osc_push_frames(const uint16_t (*frames)[4], size_t frame_count)
+{
+    ESP_RETURN_ON_FALSE(frames != NULL || frame_count == 0, ESP_ERR_INVALID_ARG, TAG, "frames ADC invalidos");
+    if (s_lvgl.paused || s_lvgl.waveform_renderer == NULL) {
+        return ESP_OK;
+    }
+    for (size_t index = 0; index < frame_count; index++) {
+        osc_waveform_push_samples(frames[index]);
+    }
+    if (frame_count > 0) {
+        osc_update_buffer_label();
+        osc_request_live_waveform_render();
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief Retorna o perfil ADC adequado à base de tempo atualmente selecionada.
+ */
+uint8_t osc_get_acquisition_profile(void)
+{
+    if (s_lvgl.time_base_us_per_div <= 10000U) {
+        return 1U;
+    }
+    if (s_lvgl.time_base_us_per_div <= 20000U) {
+        return 2U;
+    }
+    return 3U;
 }

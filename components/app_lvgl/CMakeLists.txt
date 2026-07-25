@@ -10,5 +10,5 @@ idf_component_register(
         "../wt32s3_lcd/include"
         "../ui_flow/include"
         "../../managed_components/lvgl__lvgl/src"
-    REQUIRES lvgl esp_timer wt32s3_lcd gt911_touch ui_flow osciloscopio
+    REQUIRES lvgl esp_timer wt32s3_lcd gt911_touch ui_flow osciloscopio acquisition_stream acquisition_history
 )

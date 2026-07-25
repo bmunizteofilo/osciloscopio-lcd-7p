@@ -84,16 +84,139 @@ bytes por segundo = taxa de frames × 8
 
 | Perfil | Taxa total ADC | Taxa por canal / frames | Dados brutos | Frames/bloco | Payload |
 |---|---:|---:|---:|---:|---:|
-| `FAST` (`0`) | 400 kS/s | 100 kS/s | 800 kB/s | 256 | 2048 B |
-| `MEDIUM` (`1`) | 100 kS/s | 25 kS/s | 200 kB/s | 128 | 1024 B |
-| `SLOW` (`2`) | 50 kS/s | 12,5 kS/s | 100 kB/s | 64 | 512 B |
-| `VERY_SLOW` (`3`) | 10 kS/s | 2,5 kS/s | 20 kB/s | 16 | 128 B |
+| `FAST` (`0`) | 400 kS/s | 100 kS/s | 800 kB/s | reservado na STM32 | não enviado pela ESP |
+| `MEDIUM` (`1`) | 100 kS/s | 25 kS/s | 200 kB/s | 256 | 2048 B |
+| `SLOW` (`2`) | 50 kS/s | 12,5 kS/s | 100 kB/s | 128 | 1024 B |
+| `VERY_SLOW` (`3`) | 10 kS/s | 2,5 kS/s | 20 kB/s | 64 | 512 B |
 
 O timer de trigger deve operar na taxa de frames indicada na tabela. Assim, no perfil `FAST`, TIM6 dispara uma sequência ADC de quatro canais a 100 kHz, resultando em 400 kconversões/s totais.
 
 O perfil `FAST` não deve ultrapassar o limite real do ADC considerando resolução, sample time e impedância da fonte analógica. A proposta de 400 kconversões/s totais fica abaixo da capacidade típica do ADC do STM32G070 e gera 800 kB/s, deixando margem no SPI a 10 MHz (máximo teórico bruto de 1,25 MB/s).
 
-A troca entre bases pertencentes ao mesmo perfil não deve reinicializar o ADC. Por exemplo, 20 ms/div e 100 ms/div permanecem em `SLOW`.
+### Mapeamento de base de tempo na ESP
+
+| Base por divisão | Perfil | Taxa de frames | Frames por pixel, aproximadamente |
+|---|---:|---:|---:|
+| 1 ms, 2 ms, 5 ms e 10 ms | `MEDIUM` (`1`) | 25 kframes/s | 0,4 a 4,3 |
+| 20 ms | `SLOW` (`2`) | 12,5 kframes/s | 4,3 |
+| 50 ms, 100 ms, 250 ms, 500 ms e 1 s | `VERY_SLOW` (`3`) | 2,5 kframes/s | 2,1 ou mais |
+
+O objetivo é manter resolução temporal suficiente sem sobrecarregar ADC, SPI e CPU. Em 1 ms/div, 25 kframes/s produzem 250 amostras na janela de 10 ms: cada amostra representa 40 us e um pulso mínimo de 1 ms contém 25 amostras. Quando há menos amostras que pixels, a ESP distribui os pontos pelo eixo X e usa interpolação linear apenas para continuidade visual; ela não cria informação elétrica adicional.
+
+O perfil `FAST` permanece reservado na STM32, mas não é selecionado pela UI nem enviado pela ESP. Mesmo com blocos de 512 frames, o protocolo SPI request/response a 10 MHz com fios sustentou apenas aproximadamente 58 kframes/s, abaixo dos 100 kframes/s necessários.
+
+Ao trocar de base, a ESP reinicia ADC/DMA no perfil correspondente e descarta o histórico anterior. A STM deve aceitar `STOP`, `CONFIG_PROFILE` e `START` a qualquer momento entre blocos.
+
+### Alterações obrigatórias na STM32: blocos de aquisição
+
+Os tamanhos dos blocos foram ajustados para reduzir a taxa de handshakes SPI. Portanto, no firmware STM32, a função que mapeia perfil para `frame_count` deve usar:
+
+```c
+case APP_ACQUISITION_PROFILE_MEDIUM:    *frame_count = 256U; break;
+case APP_ACQUISITION_PROFILE_SLOW:      *frame_count = 128U; break;
+case APP_ACQUISITION_PROFILE_VERY_SLOW: *frame_count = 64U; break;
+```
+
+Consequências dos novos blocos:
+
+- `MEDIUM`: 256 frames, payload de 2048 bytes, período de 10,24 ms e aproximadamente 98 blocos/s;
+- `SLOW`: 128 frames, payload de 1024 bytes, período de 10,24 ms e aproximadamente 98 blocos/s;
+- `VERY_SLOW`: 64 frames, payload de 512 bytes, período de 25,6 ms e aproximadamente 39 blocos/s.
+
+Essas mudanças reduzem o número de handshakes `DRV`/`SYNC` e transações SPI, mantendo exatamente as mesmas taxas de amostragem e qualidade de sinal.
+
+O FAST de 512 frames pode permanecer implementado somente na STM32 para experimentos futuros:
+
+```c
+#define APP_ADC_MAX_FRAMES_PER_BLOCK  (512U)
+case APP_ACQUISITION_PROFILE_FAST: *frame_count = 512U; break;
+```
+
+`APP_SPI_MAX_ADC_PAYLOAD_BYTES` deve ser ao menos `4096U`. Os buffers TX e RX SPI devem suportar no mínimo **4102 bytes**: 1 byte simultâneo, 5 bytes de cabeçalho e 4096 bytes de payload. A ESP não solicita esse perfil atualmente.
+
+## Acionamento PWM dos bicos
+
+A STM controla quatro bicos em sequência (`Bico 1 → Bico 2 → Bico 3 → Bico 4`).
+Nunca há mais de um bico em nível ativo: o desligamento de um bico dispara por
+hardware o próximo. O tempo desligado de cada bico continua transcorrendo
+enquanto os demais bicos são atendidos.
+
+O comando de limpeza deve informar RPM, tempo máximo ligado (`Ton`) em
+milissegundos inteiros, quantidade de ciclos completos e pausa entre ciclos. Um ciclo completo equivale a uma
+cadeia dos quatro bicos; portanto, `cycles = 100` produz 100 pulsos em cada
+bico, totalizando 400 pulsos.
+
+### Configuração PWM pela SPI
+
+A `REQUEST` SPI tem sempre quatro bytes. Por isso os nove bytes da
+configuração PWM são enviados em três comandos de configuração, seguidos por
+um comando explícito de início. Todos os campos multibyte são little-endian.
+A ESP deve esperar a `RESPONSE` de sucesso de cada comando antes de enviar o
+seguinte.
+
+```text
+PWM_CONFIG_0 (0x20): RPM_L | RPM_H | Ton_ms
+PWM_CONFIG_1 (0x21): cycles_L | cycles_H | pause_ms_L
+PWM_CONFIG_2 (0x22): pause_ms_H | operation_mode | 0x00
+PWM_START    (0x23): 0x00 | 0x00 | 0x00
+PWM_STOP     (0x24): 0x00 | 0x00 | 0x00
+```
+
+`Ton_ms` é um `uint8_t`, `RPM`, `cycles` e `pause_ms` são `uint16_t`. A
+pausa aumenta o intervalo entre dois inícios sucessivos do Bico 1; ela não
+altera a validação do máximo `Ton` permitido pelo RPM.
+
+`operation_mode` é sempre um `uint8_t`:
+
+```text
+0       = teste manual: ignora cycles e permanece ativo até PWM_STOP
+1       = execução finita: respeita cycles
+2..255  = por enquanto também respeita cycles; reservado para testes automáticos futuros
+```
+
+`PWM_START` só é aceito depois de `PWM_CONFIG_0`, `PWM_CONFIG_1` e
+`PWM_CONFIG_2`. Na versão atual, uma execução finita aceita de 1 a 256 ciclos
+por partida, limite do contador de repetição do TIM17. `PWM_STOP` é exclusivo
+da rotina de bicos e não para a aquisição ADC.
+
+### Regra de RPM, duty e tempo ligado
+
+O RPM representa um motor quatro-tempos. Cada bico se repete a cada duas voltas
+do virabrequim. A ESP **deve** validar a regra antes de enviar o comando, e a
+STM a valida novamente antes de programar os timers.
+
+```text
+1 <= RPM <= 10.000
+
+T_ciclo       = 120.000.000 / RPM us
+T_on_duty_50  = T_ciclo / 2 = 60.000.000 / RPM us
+T_on_serial   = T_ciclo / 4 = 30.000.000 / RPM us
+T_on_maximo   = min(35.000 us, T_on_duty_50, T_on_serial)
+              = min(35.000 us, 30.000.000 / RPM us)
+
+Ton_us = Ton_ms * 1.000
+1 ms <= Ton solicitado <= 35 ms
+Ton_us <= T_on_maximo
+```
+
+`T_on_duty_50` representa o limite do duty original de 50%. `T_on_serial` é o
+limite adicional imposto pela fonte: os quatro pulsos não podem se sobrepor e
+precisam caber no mesmo `T_ciclo`. Por isso ele é o limite efetivo mais restrito.
+Um pedido fora desses limites deve receber resposta de argumento inválido; a STM
+não deve reduzir `Ton` silenciosamente nem iniciar a limpeza.
+
+Exemplo para `RPM = 5.000`:
+
+```text
+T_ciclo = 24.000 us
+T_on_duty_50 = 12.000 us
+T_on_serial = 6.000 us
+T_on_maximo = 6.000 us
+```
+
+Assim, `Ton = 6 ms` é aceito e `Ton = 7 ms` é rejeitado. O tempo em nível baixo
+de cada bico não precisa terminar antes de iniciar o próximo; basta que o bico
+atual já tenha sido desligado.
 
 ## Protocolo SPI
 
@@ -147,6 +270,11 @@ Regras elétricas e de firmware:
 | `0x03` | `STOP` | `0, 0, 0` | Para aquisição e baixa `DRDY`. Resposta: 1 byte de resultado. |
 | `0x04` | `STATUS` | `0xFF, 0xFF, 0xFF` | Prepara o estado do escravo. Resposta: 4 bytes. |
 | `0x10` | `READ_BLOCK` | `0, 0, 0` | Trava o próximo bloco disponível e prepara cabeçalho e payload. Só permitido com `DRDY=1`. |
+| `0x20` | `PWM_CONFIG_0` | `rpm_L, rpm_H, Ton_ms` | Grava RPM e tempo ligado PWM. Resposta: 1 byte de resultado. |
+| `0x21` | `PWM_CONFIG_1` | `cycles_L, cycles_H, pause_ms_L` | Grava ciclos e byte baixo da pausa PWM. Resposta: 1 byte de resultado. |
+| `0x22` | `PWM_CONFIG_2` | `pause_ms_H, operation_mode, 0` | Grava byte alto da pausa e modo PWM. Resposta: 1 byte de resultado. |
+| `0x23` | `PWM_START` | `0, 0, 0` | Valida a configuração completa e inicia os bicos. Resposta: 1 byte de resultado. |
+| `0x24` | `PWM_STOP` | `0, 0, 0` | Para imediatamente a rotina PWM. Resposta: 1 byte de resultado. |
 | `0x7F` | `RESET` | `0, 0, 0` | Limpa estado SPI e reinicia a aquisição parada. Resposta: 1 byte de resultado. |
 | `0x80` | `READ_RESPONSE` | seguido de dummies | Usado somente na fase `RESPONSE`; não é uma `REQUEST`. |
 
@@ -164,10 +292,10 @@ RX: ignorar
 RESPONSE_ALIVE
 TX: 0x80 0xFF 0xFF 0xFF
 RX: ignorar RX[0]
-    RX[1..3] = 0xA5 0x5A 0x02
+    RX[1..3] = 0xA5 0x5A 0x03
 ```
 
-`0xA5 0x5A` é a assinatura fixa e `0x02` é a versão deste protocolo. A STM arma essa resposta depois de receber e validar `REQUEST_ALIVE`. A ESP só considera a placa presente se os três bytes coincidirem exatamente; isso evita aceitar MISO flutuante como resposta válida.
+`0xA5 0x5A` é a assinatura fixa e `0x03` é a versão deste protocolo. A STM arma essa resposta depois de receber e validar `REQUEST_ALIVE`. A ESP só considera a placa presente se os três bytes coincidirem exatamente; isso evita aceitar MISO flutuante como resposta válida.
 
 Se não houver resposta válida, a ESP informa que a placa STM32 não foi
 detectada e não cria a task de aquisição SPI. Uma task leve de supervisão no
@@ -194,10 +322,23 @@ Para `READ_BLOCK`, a ESP só inicia `REQUEST_READ_BLOCK` quando `DRDY` estiver a
 O primeiro byte recebido simultaneamente ao opcode deve ser ignorado. Os bytes seguintes são:
 
 ```text
-seq | profile | frame_count_L | frame_count_H | payload
+seq | profile | frame_count_L | frame_count_H | cycle_done | payload
 ```
 
 O payload contém `frame_count` frames de 8 bytes, em ordem cronológica, do mais antigo para o mais recente.
+
+`cycle_done` é um `uint8_t` associado ao bloco ADC:
+
+```text
+0 = não houve encerramento PWM finito pendente neste bloco
+1 = a quantidade de ciclos PWM configurada terminou
+```
+
+Quando uma execução PWM finita termina, a STM mantém a indicação pendente até
+conseguir publicar um bloco ADC na fila SPI. Ela marca somente esse bloco com
+`cycle_done = 1`; blocos posteriores voltam a `0`. Em modo manual e após
+`PWM_STOP`, o campo permanece em `0`. O comportamento de `DRDY` não muda:
+ele continua indicando exclusivamente que há ao menos um bloco ADC pronto.
 
 Exemplo `FAST`:
 
@@ -207,12 +348,13 @@ TX: 0x10 0x00 0x00 0x00
 RX: ignorar
 
 RESPONSE_READ_BLOCK
-TX: 0x80 + 2052 bytes 0xFF
+TX: 0x80 + 2053 bytes 0xFF
 RX: ignorar RX[0]
     RX[1] = seq
     RX[2] = profile
     RX[3..4] = frame_count = 256 (little-endian)
-    RX[5..2052] = 256 × 8 bytes de frames
+    RX[5] = cycle_done
+    RX[6..2053] = 256 × 8 bytes de frames
 ```
 
 Não há timestamp nem CRC nesta versão. A ESP deve verificar se `seq` avançou de uma unidade módulo 256. Qualquer salto indica bloco perdido ou overflow na STM.
@@ -237,7 +379,7 @@ Ao processar `READ_BLOCK`, a STM copia o bloco mais antigo da fila para o buffer
 
 `DRDY` deve permanecer alto enquanto existir ao menos um bloco na fila e só deve baixar quando ela ficar vazia. Se a fila estiver cheia ao chegar um novo bloco ADC, a STM pode descartar o mais antigo ou o mais novo, desde que incremente a sequência normalmente; a ESP detectará a lacuna pelo byte `seq`.
 
-Dois slots absorvem jitter e reduzem perdas pontuais, mas não compensam uma diferença permanente de taxa. No perfil `FAST`, a ESP precisa consumir cada bloco de 256 frames em menos de aproximadamente 2,56 ms para acompanhar a produção contínua. A fila é margem de segurança, não substitui uma taxa SPI sustentada suficiente.
+Dois slots absorvem jitter e reduzem perdas pontuais, mas não compensam uma diferença permanente de taxa. `MEDIUM` e `SLOW` possuem intervalo de 10,24 ms, e `VERY_SLOW` de 25,6 ms. A fila é margem de segurança, não substitui uma taxa SPI sustentada suficiente.
 
 ## Regras de software na ESP32
 
@@ -245,10 +387,10 @@ Dois slots absorvem jitter e reduzem perdas pontuais, mas não compensam uma dif
 2. A task LVGL deve ficar fixada no core 1.
 3. As ISRs de `DRDY` e `SYNC` apenas notificam a task SPI; elas não executam transferências.
 4. Para cada operação, a task SPI envia uma `REQUEST`, aguarda `SYNC` alto, então envia `READ_RESPONSE` com o tamanho previsto para aquele opcode e aguarda `SYNC` baixo.
-5. Quando `DRDY` estiver alto, a task SPI executa `REQUEST_READ_BLOCK` seguido de `RESPONSE_READ_BLOCK`, valida cabeçalho/perfil/sequência e grava frames em uma fila SPSC.
-6. O componente `osciloscopio`, no core 1, remove frames da fila e atualiza seu histórico circular em PSRAM.
-7. Uma troca de perfil deve solicitar `STOP`, `CONFIG_PROFILE`, limpar a fila de entrada e enviar `START`.
-8. O histórico visual da ESP não depende da base usada no instante de captura; a base de tempo controla apenas a janela apresentada.
+5. Quando `DRDY` estiver alto, a task SPI executa `REQUEST_READ_BLOCK` seguido de `RESPONSE_READ_BLOCK`, valida cabeçalho/perfil e grava o payload diretamente no histórico circular em PSRAM.
+6. O Core 0 é o único escritor do histórico; o Core 1 lê apenas snapshots atômicos para renderizar. Portanto, lentidão do LVGL nunca pode interromper a drenagem SPI.
+7. Uma troca de perfil deve solicitar `STOP`, `CONFIG_PROFILE`, resetar o histórico e enviar `START`.
+8. A interface desenha em taxa visual limitada, mas a captura e o histórico preservam todos os frames recebidos.
 
 ## Regras de software na STM32
 
@@ -259,11 +401,10 @@ Dois slots absorvem jitter e reduzem perdas pontuais, mas não compensam uma dif
 5. A STM processa uma `REQUEST` somente depois que CS voltar a nível alto e a transferência de quatro bytes for validada. Em seguida, arma a `RESPONSE`, eleva `SYNC` e só baixa `SYNC` após a RESPONSE terminar e a próxima REQUEST estar armada.
 6. A STM não deve bloquear a aquisição esperando a ESP, exceto quando os dois buffers já estiverem ocupados.
 7. A sequência incrementa por bloco adquirido, inclusive quando um bloco precisa ser descartado por overflow.
-8. `CONFIG_PROFILE`, `START`, `STOP` e `RESET` devem ser processados fora de interrupções longas, preservando a integridade do DMA e do SPI escravo.
+8. `CONFIG_PROFILE`, `START`, `STOP`, comandos `PWM_*` e `RESET` devem ser processados fora de interrupções longas, preservando a integridade do DMA e do SPI escravo.
 
 ## Próximas implementações na ESP
 
 - Escolher e conectar o GPIO `DRDY`.
-- Criar a task SPI no core 0 e a fila SPSC de frames.
-- Expor no componente `osciloscopio` uma API de ingestão de frames ADC.
-- Substituir progressivamente o gerador de sinal simulado pela entrada SPI.
+- Monitorar a sequência dos blocos para registrar lacunas de aquisição.
+- Validar as quatro faixas de taxa com gerador de função e sinais reais.

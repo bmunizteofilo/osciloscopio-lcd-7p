@@ -13,6 +13,8 @@
 #include "lvgl.h"
 #include "ui_flow.h"
 #include "osc.h"
+#include "acquisition_stream.h"
+#include "acquisition_history.h"
 
 /** @brief Periodo do tick entregue ao LVGL, em milissegundos. */
 #define APP_LVGL_TICK_PERIOD_MS 1
@@ -47,6 +49,17 @@ static app_lvgl_context_t s_lvgl = {0};
 
 /** @brief Tag usada nos registros da infraestrutura LVGL. */
 static const char *TAG = "app_lvgl";
+
+/**
+ * @brief Atualiza o snapshot visual do histórico recebido pelo Core 0.
+ */
+static void app_lvgl_consume_acquisition(void)
+{
+    osc_refresh_acquisition_history();
+    if (acquisition_history_take_cycle_done()) {
+        osc_notify_cycle_done();
+    }
+}
 
 /** @brief Obtém exclusividade para chamadas à API LVGL. */
 static void app_lvgl_lock(void)
@@ -141,6 +154,7 @@ static void app_lvgl_task(void *arg)
     (void)arg;
     while (true) {
         app_lvgl_lock();
+        app_lvgl_consume_acquisition();
         lv_timer_handler();
         app_lvgl_unlock();
         vTaskDelay(pdMS_TO_TICKS(APP_LVGL_TASK_DELAY_MS));

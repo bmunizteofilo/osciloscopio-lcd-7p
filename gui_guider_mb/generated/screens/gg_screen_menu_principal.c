@@ -17,7 +17,7 @@
  *
  * Tool            : GUI Guider
  * Version         : 2.0.0
- * Generated on    : 21/07/2026
+ * Generated on    : 23/07/2026
  * ------------------------------------------------------------------------------
  */
 
@@ -290,9 +290,9 @@ void setup_screen_menu_principal(gg_ui_t * ui)
     lv_obj_set_width(ui->screen_menu_principal.label_status_wifi, LV_SIZE_CONTENT);
     lv_obj_set_height(ui->screen_menu_principal.label_status_wifi, LV_SIZE_CONTENT);
     lv_obj_set_align(ui->screen_menu_principal.label_status_wifi, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_x(ui->screen_menu_principal.label_status_wifi, 252);
+    lv_obj_set_x(ui->screen_menu_principal.label_status_wifi, 202);
     lv_obj_set_y(ui->screen_menu_principal.label_status_wifi, 31);
-    lv_label_set_text(ui->screen_menu_principal.label_status_wifi, "Wifi - Offline");
+    lv_label_set_text(ui->screen_menu_principal.label_status_wifi, "Wifi ");
 
     // Style: ui->screen_menu_principal.label_status_wifi [LV_PART_MAIN|LV_STATE_DEFAULT]
     lv_obj_set_style_text_font(ui->screen_menu_principal.label_status_wifi, &lv_font_montserratMedium_16,
@@ -305,15 +305,57 @@ void setup_screen_menu_principal(gg_ui_t * ui)
     lv_obj_set_width(ui->screen_menu_principal.label_status_bluetooth, LV_SIZE_CONTENT);
     lv_obj_set_height(ui->screen_menu_principal.label_status_bluetooth, LV_SIZE_CONTENT);
     lv_obj_set_align(ui->screen_menu_principal.label_status_bluetooth, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_x(ui->screen_menu_principal.label_status_bluetooth, 427);
+    lv_obj_set_x(ui->screen_menu_principal.label_status_bluetooth, 319);
     lv_obj_set_y(ui->screen_menu_principal.label_status_bluetooth, 31);
-    lv_label_set_text(ui->screen_menu_principal.label_status_bluetooth, "Bluetooth - Offline");
+    lv_label_set_text(ui->screen_menu_principal.label_status_bluetooth, "Bluetooth ");
 
     // Style: ui->screen_menu_principal.label_status_bluetooth [LV_PART_MAIN|LV_STATE_DEFAULT]
     lv_obj_set_style_text_color(ui->screen_menu_principal.label_status_bluetooth, lv_color_hex(0xffffff),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui->screen_menu_principal.label_status_bluetooth, &lv_font_montserratMedium_16,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    // Create label: ui->screen_menu_principal.label_power_control_status
+    ui->screen_menu_principal.label_power_control_status = lv_label_create(ui->screen_menu_principal.screen);
+    lv_obj_set_width(ui->screen_menu_principal.label_power_control_status, LV_SIZE_CONTENT);
+    lv_obj_set_height(ui->screen_menu_principal.label_power_control_status, LV_SIZE_CONTENT);
+    lv_obj_set_align(ui->screen_menu_principal.label_power_control_status, LV_ALIGN_TOP_LEFT);
+    lv_obj_set_x(ui->screen_menu_principal.label_power_control_status, 478);
+    lv_obj_set_y(ui->screen_menu_principal.label_power_control_status, 31);
+    lv_label_set_text(ui->screen_menu_principal.label_power_control_status, "Power Control");
+
+    // Style: ui->screen_menu_principal.label_power_control_status [LV_PART_MAIN|LV_STATE_DEFAULT]
+    lv_obj_set_style_text_color(ui->screen_menu_principal.label_power_control_status, lv_color_hex(0xffffff),
+                                LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_menu_principal.label_power_control_status, &lv_font_montserratMedium_16,
+                               LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    // Create led: ui->screen_menu_principal.led_wifi
+    ui->screen_menu_principal.led_wifi = lv_led_create(ui->screen_menu_principal.screen);
+    lv_obj_set_width(ui->screen_menu_principal.led_wifi, 15);
+    lv_obj_set_height(ui->screen_menu_principal.led_wifi, 15);
+    lv_obj_set_align(ui->screen_menu_principal.led_wifi, LV_ALIGN_TOP_LEFT);
+    lv_obj_set_x(ui->screen_menu_principal.led_wifi, 252);
+    lv_obj_set_y(ui->screen_menu_principal.led_wifi, 33);
+    lv_led_set_color(ui->screen_menu_principal.led_wifi, lv_color_hex(0xef1212));
+
+    // Create led: ui->screen_menu_principal.led_bluetooth
+    ui->screen_menu_principal.led_bluetooth = lv_led_create(ui->screen_menu_principal.screen);
+    lv_obj_set_width(ui->screen_menu_principal.led_bluetooth, 15);
+    lv_obj_set_height(ui->screen_menu_principal.led_bluetooth, 15);
+    lv_obj_set_align(ui->screen_menu_principal.led_bluetooth, LV_ALIGN_TOP_LEFT);
+    lv_obj_set_x(ui->screen_menu_principal.led_bluetooth, 417);
+    lv_obj_set_y(ui->screen_menu_principal.led_bluetooth, 33);
+    lv_led_set_color(ui->screen_menu_principal.led_bluetooth, lv_color_hex(0xef1212));
+
+    // Create led: ui->screen_menu_principal.led_power_control
+    ui->screen_menu_principal.led_power_control = lv_led_create(ui->screen_menu_principal.screen);
+    lv_obj_set_width(ui->screen_menu_principal.led_power_control, 15);
+    lv_obj_set_height(ui->screen_menu_principal.led_power_control, 15);
+    lv_obj_set_align(ui->screen_menu_principal.led_power_control, LV_ALIGN_TOP_LEFT);
+    lv_obj_set_x(ui->screen_menu_principal.led_power_control, 613);
+    lv_obj_set_y(ui->screen_menu_principal.led_power_control, 33);
+    lv_led_set_color(ui->screen_menu_principal.led_power_control, lv_color_hex(0xef1212));
 
     // screen_menu_principal custom code
 

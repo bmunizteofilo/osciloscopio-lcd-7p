@@ -4,5 +4,5 @@ idf_component_register(
         "include"
         "../wt32s3_lcd/include"
         "../../managed_components/lvgl__lvgl/src"
-    REQUIRES lvgl esp_timer wt32s3_lcd gt911_touch
+    REQUIRES lvgl esp_timer wt32s3_lcd gt911_touch acquisition_history
 )

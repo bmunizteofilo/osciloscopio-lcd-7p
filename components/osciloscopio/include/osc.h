@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stddef.h>
+
 #include "esp_err.h"
 #include "lvgl.h"
 #include "wt32s3_lcd.h"
@@ -19,6 +21,10 @@ void osc_set_lcd(wt32s3_lcd_handle_t lcd);
 
 /** @brief Função chamada pelo botão Menu do osciloscópio. */
 typedef void (*osc_menu_callback_t)(void);
+/** @brief Função chamada quando um ciclo é finalizado pelo usuário ou pela STM32. */
+typedef void (*osc_cycle_finished_callback_t)(bool pwm_completed);
+/** @brief Função chamada quando a base de tempo exige um novo perfil ADC. */
+typedef void (*osc_profile_changed_callback_t)(uint8_t profile);
 
 /**
  * @brief Define a ação executada pelo botão Menu do osciloscópio.
@@ -26,6 +32,19 @@ typedef void (*osc_menu_callback_t)(void);
  * @param[in] callback Função de retorno para a tela principal.
  */
 void osc_set_menu_callback(osc_menu_callback_t callback);
+
+/**
+ * @brief Define a ação executada ao encerrar manualmente o ciclo.
+ *
+ * @param[in] callback Função de retorno para o resumo do ciclo.
+ */
+void osc_set_cycle_finished_callback(osc_cycle_finished_callback_t callback);
+
+/** @brief Define a ação executada ao trocar o perfil ADC derivado da base de tempo. */
+void osc_set_profile_changed_callback(osc_profile_changed_callback_t callback);
+
+/** @brief Notifica que a STM32 concluiu uma execução PWM finita. */
+void osc_notify_cycle_done(void);
 
 /**
  * @brief Cria a interface do osciloscópio.
@@ -62,6 +81,13 @@ lv_obj_t *osc_get_screen(void);
 esp_err_t osc_set_input_sample_rate(uint32_t sample_rate_hz);
 
 /**
+ * @brief Atualiza a fotografia visual com as amostras capturadas no Core 0.
+ *
+ * Deve ser chamada apenas pela task LVGL no Core 1.
+ */
+void osc_refresh_acquisition_history(void);
+
+/**
  * @brief Insere um frame ADC de quatro canais no histórico do osciloscópio.
  *
  * Os valores devem ser conversões ADC de 12 bits alinhadas nos bits menos
@@ -72,6 +98,22 @@ esp_err_t osc_set_input_sample_rate(uint32_t sample_rate_hz);
  * @return @c ESP_OK em caso de sucesso ou @c ESP_ERR_INVALID_ARG se @p samples for nulo.
  */
 esp_err_t osc_push_frame(const uint16_t samples[4]);
+
+/**
+ * @brief Insere vários frames no histórico e solicita um único redesenho.
+ *
+ * @param[in] frames Frames consecutivos na ordem CH1, CH2, CH3 e CH4.
+ * @param[in] frame_count Quantidade de frames em @p frames.
+ * @return ESP_OK em sucesso.
+ */
+esp_err_t osc_push_frames(const uint16_t (*frames)[4], size_t frame_count);
+
+/**
+ * @brief Retorna o perfil ADC adequado à base de tempo atualmente selecionada.
+ *
+ * @return Perfil de 0 (FAST) a 3 (VERY_SLOW).
+ */
+uint8_t osc_get_acquisition_profile(void);
 
 #ifdef __cplusplus
 }

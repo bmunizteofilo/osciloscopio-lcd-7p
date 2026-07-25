@@ -17,7 +17,7 @@
  *
  * Tool            : GUI Guider
  * Version         : 2.0.0
- * Generated on    : 21/07/2026
+ * Generated on    : 23/07/2026
  * ------------------------------------------------------------------------------
  */
 
@@ -54,6 +54,10 @@ typedef struct {
 
 typedef struct {
     lv_obj_t * screen;
+    lv_obj_t * led_power_control;
+    lv_obj_t * led_bluetooth;
+    lv_obj_t * led_wifi;
+    lv_obj_t * label_power_control_status;
     lv_obj_t * label_status_bluetooth;
     lv_obj_t * label_status_wifi;
     lv_obj_t * label_menu_principal_hora;
