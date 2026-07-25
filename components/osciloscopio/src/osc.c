@@ -150,6 +150,7 @@ typedef struct {
     lv_obj_t *measurement_labels[4][5];
     lv_obj_t *pause_button;
     lv_obj_t *stop_cycle_button;
+    lv_obj_t *run_pause_dropdown;
     lv_obj_t *pause_button_label;
     lv_obj_t *stop_cycle_button_label;
     lv_timer_t *stop_cycle_blink_timer;
@@ -164,7 +165,7 @@ typedef struct {
     bool trigger_single_captured;
     uint8_t trigger_mode;
     uint8_t trigger_channel;
-    uint32_t trigger_single_first_sample;
+    uint32_t trigger_single_first_frame;
     uint8_t backlight_percent;
     uint32_t time_base_us_per_div;
     uint32_t voltage_base_mv_per_div;
@@ -190,7 +191,9 @@ typedef struct {
     bool trigger_latest_event_valid;
     bool trigger_candidate_event_valid;
     bool trigger_normal_hold_valid;
+    bool pause_view_valid;
     uint32_t history_view_offset;
+    uint32_t pause_first_frame;
     int32_t history_drag_last_x;
     bool history_navigation_started;
     uint32_t last_plot_first_sample;
@@ -220,6 +223,8 @@ static void osc_update_action_buttons(void);
 static void osc_trigger_reset_search(void);
 static void osc_trigger_reset_detector(void);
 static void osc_trigger_scan_new_samples(void);
+static void osc_trigger_capture_single(void);
+static void osc_set_paused(bool paused);
 
 /** @brief Callback registrado pelo fluxo de telas para retornar ao menu principal. */
 static osc_menu_callback_t s_menu_callback;
@@ -339,15 +344,7 @@ static void osc_run_pause_event_cb(lv_event_t *event)
     lv_obj_t *dropdown = lv_event_get_target_obj(event);
     const uint32_t selected = lv_dropdown_get_selected(dropdown);
 
-    s_lvgl.paused = selected == 1;
-    s_lvgl.history_view_offset = 0;
-    s_lvgl.history_navigation_started = false;
-    osc_update_buffer_label();
-    if (!s_lvgl.paused) {
-        s_lvgl.cursor_mode = OSC_CURSOR_MODE_OFF;
-    }
-    osc_update_cursor_label();
-    osc_update_action_buttons();
+    osc_set_paused(selected == 1U);
 }
 
 /**
@@ -565,7 +562,7 @@ static lv_obj_t *osc_create_menu_item(lv_obj_t *parent, const char *title, const
     if (event_cb != NULL) {
         lv_obj_add_event_cb(dropdown, event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     }
-    return item;
+    return dropdown;
 }
 
 /**
@@ -587,7 +584,8 @@ static void osc_create_top_menu(lv_obj_t *parent)
     lv_obj_set_style_bg_color(menu, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(menu, LV_OPA_COVER, LV_PART_MAIN);
 
-    osc_create_menu_item(menu, "Run", "Run\nPause", 0, 0xc62828, osc_run_pause_event_cb);
+    s_lvgl.run_pause_dropdown =
+        osc_create_menu_item(menu, "Run", "Run\nPause", 0, 0xc62828, osc_run_pause_event_cb);
     osc_create_menu_item(menu, "Tempo", "1ms\n2ms\n5ms\n10ms\n20ms\n50ms\n100ms\n250ms\n500ms\n1s", 6, 0x455a64, osc_time_base_event_cb);
     osc_create_menu_item(menu, "Tensao", "50mV\n100mV\n200mV\n500mV\n1V\n2V\n5V\n10V", 0, 0x5d4037, osc_voltage_base_event_cb);
     osc_create_menu_item(menu, "Trigger", "Off\nNormal\nAuto\nSingle", 0, 0x6a1b9a, osc_trigger_event_cb);
@@ -1136,12 +1134,74 @@ static void osc_request_live_waveform_render(void)
 static void osc_update_buffer_label(void)
 {
     if (s_lvgl.buffer_label != NULL) {
-        const uint32_t displayed_position = s_lvgl.history_view_offset < s_lvgl.waveform_sample_count ?
-                                            s_lvgl.waveform_sample_count - s_lvgl.history_view_offset : 0;
-        const uint32_t percent = (s_lvgl.paused ? displayed_position : s_lvgl.waveform_sample_count) * 100U /
-                                 OSC_HISTORY_SAMPLE_COUNT;
+        uint32_t displayed_position = s_lvgl.waveform_sample_count;
+        if (s_lvgl.paused && s_lvgl.pause_view_valid &&
+            s_lvgl.waveform_total_frames >= s_lvgl.waveform_sample_count) {
+            const uint32_t history_first = s_lvgl.waveform_total_frames - s_lvgl.waveform_sample_count;
+            displayed_position = s_lvgl.pause_first_frame > history_first ?
+                                 s_lvgl.pause_first_frame - history_first : 0U;
+            displayed_position = displayed_position > s_lvgl.history_view_offset ?
+                                 displayed_position - s_lvgl.history_view_offset : 0U;
+        }
+        const uint32_t percent = displayed_position * 100U / OSC_HISTORY_SAMPLE_COUNT;
         lv_label_set_text_fmt(s_lvgl.buffer_label, "Buffer: %u%%", (unsigned)percent);
     }
+}
+
+/**
+ * @brief Registra a janela atualmente exibida como origem da navegacao pausada.
+ */
+static void osc_capture_pause_window(void)
+{
+    const uint32_t visible_samples = osc_waveform_visible_samples();
+    const uint32_t displayed_samples = s_lvgl.waveform_sample_count < visible_samples ?
+                                       s_lvgl.waveform_sample_count : visible_samples;
+    if (displayed_samples == 0U || s_lvgl.waveform_total_frames < s_lvgl.waveform_sample_count) {
+        s_lvgl.pause_view_valid = false;
+        return;
+    }
+
+    const uint32_t history_first = s_lvgl.waveform_total_frames - s_lvgl.waveform_sample_count;
+    uint32_t first_sample = s_lvgl.waveform_sample_count - displayed_samples;
+    if (s_lvgl.last_plot_sample_count == displayed_samples &&
+        s_lvgl.last_plot_first_sample + displayed_samples <= s_lvgl.waveform_sample_count) {
+        first_sample = s_lvgl.last_plot_first_sample;
+    }
+    s_lvgl.pause_first_frame = history_first + first_sample;
+    s_lvgl.pause_view_valid = true;
+}
+
+/**
+ * @brief Alterna a pausa visual e sincroniza os controles de execucao.
+ *
+ * A pausa congela uma janela absoluta do historico; a aquisicao SPI pode
+ * continuar preenchendo o buffer sem deslocar a waveform exibida.
+ *
+ * @param[in] paused @c true para pausar ou @c false para retomar.
+ */
+static void osc_set_paused(bool paused)
+{
+    if (paused && !s_lvgl.paused && !s_lvgl.pause_view_valid) {
+        osc_capture_pause_window();
+    }
+    s_lvgl.paused = paused;
+    acquisition_history_set_write_paused(paused);
+    s_lvgl.history_view_offset = 0U;
+    s_lvgl.history_navigation_started = false;
+    if (!paused) {
+        s_lvgl.pause_view_valid = false;
+        if (s_lvgl.trigger_mode == 3U) {
+            osc_trigger_reset_detector();
+        }
+        s_lvgl.cursor_mode = OSC_CURSOR_MODE_OFF;
+    }
+    if (s_lvgl.run_pause_dropdown != NULL &&
+        lv_dropdown_get_selected(s_lvgl.run_pause_dropdown) != (paused ? 1U : 0U)) {
+        lv_dropdown_set_selected(s_lvgl.run_pause_dropdown, paused ? 1U : 0U);
+    }
+    osc_update_buffer_label();
+    osc_update_cursor_label();
+    osc_update_action_buttons();
 }
 
 /**
@@ -1172,8 +1232,11 @@ static void osc_waveform_history_drag_event_cb(lv_event_t *event)
     }
 
     const uint32_t visible_samples = osc_waveform_visible_samples();
-    const uint32_t max_offset = s_lvgl.waveform_sample_count > visible_samples ?
-                                s_lvgl.waveform_sample_count - visible_samples : 0;
+    const uint32_t history_first = s_lvgl.waveform_total_frames - s_lvgl.waveform_sample_count;
+    const uint32_t max_offset = s_lvgl.pause_view_valid && s_lvgl.pause_first_frame > history_first ?
+                                s_lvgl.pause_first_frame - history_first :
+                                (s_lvgl.waveform_sample_count > visible_samples ?
+                                 s_lvgl.waveform_sample_count - visible_samples : 0U);
     const uint32_t samples_per_pixel = (visible_samples + OSC_WAVEFORM_INNER_WIDTH - 1) / OSC_WAVEFORM_INNER_WIDTH;
     const uint32_t movement = (uint32_t)abs(delta_x) * samples_per_pixel;
 
@@ -1231,8 +1294,6 @@ static void osc_waveform_draw_line(uint16_t *framebuffer, uint32_t stride_px, co
  */
 static void osc_trigger_reset_search(void)
 {
-    s_lvgl.trigger_single_captured = false;
-    s_lvgl.trigger_single_first_sample = 0U;
     s_lvgl.trigger_scan_total_frames = 0U;
     s_lvgl.trigger_latest_event_frame = 0U;
     s_lvgl.trigger_candidate_event_frame = 0U;
@@ -1251,6 +1312,8 @@ static void osc_trigger_reset_search(void)
 static void osc_trigger_reset_detector(void)
 {
     osc_trigger_reset_search();
+    s_lvgl.trigger_single_captured = false;
+    s_lvgl.trigger_single_first_frame = 0U;
     s_lvgl.trigger_normal_first_frame = 0U;
     s_lvgl.trigger_normal_hold_valid = false;
 }
@@ -1336,6 +1399,41 @@ static bool osc_waveform_find_trigger(uint32_t displayed_samples, uint32_t *firs
     }
     *first_sample = event - history_first - left_samples;
     return true;
+}
+
+/**
+ * @brief Congela a janela centralizada quando o modo Single encontra uma borda.
+ *
+ * A janela e armazenada em coordenada absoluta do historico para continuar
+ * representando o mesmo sinal mesmo que a aquisicao continue preenchendo o
+ * ring buffer em PSRAM.
+ */
+static void osc_trigger_capture_single(void)
+{
+    if (s_lvgl.trigger_mode != 3U || !s_lvgl.trigger_enabled || s_lvgl.paused ||
+        s_lvgl.trigger_single_captured || !s_lvgl.trigger_latest_event_valid) {
+        return;
+    }
+
+    const uint32_t displayed_samples = osc_waveform_visible_samples();
+    if (s_lvgl.waveform_sample_count < displayed_samples) {
+        return;
+    }
+
+    const uint32_t history_first = s_lvgl.waveform_total_frames - s_lvgl.waveform_sample_count;
+    const uint32_t left_samples = displayed_samples / 2U;
+    const uint32_t right_samples = displayed_samples - left_samples - 1U;
+    const uint32_t event_frame = s_lvgl.trigger_latest_event_frame;
+    if (event_frame < history_first + left_samples ||
+        event_frame + right_samples >= s_lvgl.waveform_total_frames) {
+        return;
+    }
+
+    s_lvgl.trigger_single_first_frame = event_frame - left_samples;
+    s_lvgl.trigger_single_captured = true;
+    s_lvgl.pause_first_frame = s_lvgl.trigger_single_first_frame;
+    s_lvgl.pause_view_valid = true;
+    osc_set_paused(true);
 }
 
 /**
@@ -1435,19 +1533,24 @@ static void osc_waveform_draw_event_cb(lv_event_t *event)
     uint32_t first_sample = max_offset - view_offset;
     bool draw_signal = true;
     bool plot_triggered = false;
-    const bool trigger_active = !s_lvgl.paused && s_lvgl.time_base_us_per_div <= 100000U &&
-                                displayed_samples == visible_samples && s_lvgl.trigger_enabled;
-    if (trigger_active) {
-        if (s_lvgl.trigger_mode == 3 && s_lvgl.trigger_single_captured) {
-            first_sample = s_lvgl.trigger_single_first_sample;
+    const uint32_t history_first = s_lvgl.waveform_total_frames - s_lvgl.waveform_sample_count;
+    if (s_lvgl.paused && s_lvgl.pause_view_valid) {
+        if (s_lvgl.pause_first_frame >= history_first &&
+            s_lvgl.pause_first_frame + displayed_samples <= s_lvgl.waveform_total_frames) {
+            const uint32_t pause_offset = s_lvgl.history_view_offset <
+                                          s_lvgl.pause_first_frame - history_first ?
+                                          s_lvgl.history_view_offset : s_lvgl.pause_first_frame - history_first;
+            first_sample = s_lvgl.pause_first_frame - history_first - pause_offset;
             plot_triggered = true;
         } else {
+            draw_signal = false;
+        }
+    } else {
+        const bool trigger_active = !s_lvgl.paused && s_lvgl.time_base_us_per_div <= 100000U &&
+                                    displayed_samples == visible_samples && s_lvgl.trigger_enabled;
+        if (trigger_active) {
             const bool trigger_found = osc_waveform_find_trigger(displayed_samples, &first_sample);
-            if (trigger_found && s_lvgl.trigger_mode == 3) {
-                s_lvgl.trigger_single_first_sample = first_sample;
-                s_lvgl.trigger_single_captured = true;
-                plot_triggered = true;
-            } else if (trigger_found) {
+            if (trigger_found) {
                 if (s_lvgl.trigger_mode == 1U) {
                     s_lvgl.trigger_normal_first_frame =
                         s_lvgl.waveform_total_frames - s_lvgl.waveform_sample_count + first_sample;
@@ -1536,6 +1639,8 @@ static void osc_waveform_reset(void)
     s_lvgl.waveform_generation = 0;
     s_lvgl.history_view_offset = 0;
     s_lvgl.history_navigation_started = false;
+    s_lvgl.pause_first_frame = 0U;
+    s_lvgl.pause_view_valid = false;
     osc_trigger_reset_detector();
     s_lvgl.last_plot_first_sample = 0;
     s_lvgl.last_plot_sample_count = 0;
@@ -1676,15 +1781,7 @@ static void osc_pause_button_event_cb(lv_event_t *event)
     if (s_lvgl.stop_cycle_requested) {
         return;
     }
-    s_lvgl.paused = !s_lvgl.paused;
-    s_lvgl.history_view_offset = 0;
-    s_lvgl.history_navigation_started = false;
-    if (!s_lvgl.paused) {
-        s_lvgl.cursor_mode = OSC_CURSOR_MODE_OFF;
-    }
-    osc_update_buffer_label();
-    osc_update_cursor_label();
-    osc_update_action_buttons();
+    osc_set_paused(!s_lvgl.paused);
 }
 
 /**
@@ -1989,6 +2086,7 @@ void osc_notify_cycle_done(void)
 /** @brief Destrói a tela do osciloscópio, seus timers e buffers de histórico. */
 void osc_destroy(void)
 {
+    acquisition_history_set_write_paused(false);
     if (s_lvgl.trigger_hide_timer != NULL) {
         lv_timer_delete(s_lvgl.trigger_hide_timer);
     }
@@ -2025,6 +2123,7 @@ esp_err_t osc_create(wt32s3_lcd_handle_t lcd)
     if (s_lvgl.screen != NULL) {
         return ESP_OK;
     }
+    acquisition_history_set_write_paused(false);
     s_lvgl.screen = lv_obj_create(NULL);
     if (s_lvgl.screen == NULL) {
         return ESP_ERR_NO_MEM;
@@ -2112,6 +2211,7 @@ void osc_refresh_acquisition_history(void)
     }
     if (changed) {
         osc_trigger_scan_new_samples();
+        osc_trigger_capture_single();
         osc_update_buffer_label();
         osc_request_live_waveform_render();
     }

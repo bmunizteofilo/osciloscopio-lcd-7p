@@ -28,6 +28,16 @@ esp_err_t acquisition_history_init(void);
 /** @brief Descarta todo o histórico e inicia uma nova geração de amostras. */
 void acquisition_history_reset(void);
 
+/**
+ * @brief Define se novos blocos ADC devem ser descartados sem alterar o histórico.
+ *
+ * A aquisição SPI continua consumindo os blocos normalmente enquanto a escrita
+ * estiver pausada, preservando a janela usada pela interface para análise.
+ *
+ * @param[in] paused @c true para descartar blocos ou @c false para gravá-los.
+ */
+void acquisition_history_set_write_paused(bool paused);
+
 /** @brief Insere um bloco ADC intercalado CH1..CH4; chamada somente pelo produtor SPI. */
 esp_err_t acquisition_history_push_payload(const uint8_t *payload, uint16_t frame_count,
                                            uint32_t frame_rate_hz);
