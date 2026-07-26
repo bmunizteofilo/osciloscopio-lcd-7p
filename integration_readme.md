@@ -160,6 +160,8 @@ PWM_CONFIG_1 (0x21): cycles_L | cycles_H | pause_ms_L
 PWM_CONFIG_2 (0x22): pause_ms_H | operation_mode | 0x00
 PWM_START    (0x23): 0x00 | 0x00 | 0x00
 PWM_STOP     (0x24): 0x00 | 0x00 | 0x00
+CYCLE_PAUSE  (0x25): 0x00 | 0x00 | 0x00
+CYCLE_RESUME (0x26): 0x00 | 0x00 | 0x00
 ```
 
 `Ton_ms` é um `uint8_t`, `RPM`, `cycles` e `pause_ms` são `uint16_t`. A
@@ -171,13 +173,30 @@ altera a validação do máximo `Ton` permitido pelo RPM.
 ```text
 0       = teste manual: ignora cycles e permanece ativo até PWM_STOP
 1       = execução finita: respeita cycles
-2..255  = por enquanto também respeita cycles; reservado para testes automáticos futuros
+2..255  = testes automáticos; cada modo pode definir uma receita STM32
 ```
 
+Os modos automáticos `0x06` e `0x09` são testes de rotações: a ESP envia o RPM
+inicial, `3 ms`, `pause_ms = 0` e `cycles = 1` apenas para completar a configuração
+serializada. A STM executa internamente as receitas abaixo; o limite de ciclos é
+ignorado nesses modos e a execução termina pelo tempo:
+
+```text
+0x06: uma rampa linear de 350 a 5000 RPM em 30 segundos
+0x09: duas rampas lineares de 350 a 6300 RPM, 40 segundos cada (80 s total)
+0x0A: cinco rampas lineares de 350 a 5000 RPM, 19 segundos cada (95 s total)
+```
+
+A alteração do período é aplicada somente entre cadeias completas dos quatro bicos.
+
 `PWM_START` só é aceito depois de `PWM_CONFIG_0`, `PWM_CONFIG_1` e
-`PWM_CONFIG_2`. Na versão atual, uma execução finita aceita de 1 a 256 ciclos
-por partida, limite do contador de repetição do TIM17. `PWM_STOP` é exclusivo
-da rotina de bicos e não para a aquisição ADC.
+`PWM_CONFIG_2`. Uma execução finita aceita de 1 a 10.000 ciclos por partida.
+`PWM_STOP` cancela a rotina PWM e não para a aquisição ADC.
+
+`CYCLE_PAUSE` para simultaneamente ADC, DMA e PWM, limpa os blocos ADC pendentes
+e preserva o contador de ciclos já concluídos. `CYCLE_RESUME` retoma ADC e PWM
+com a mesma configuração, continuando a contagem do ciclo interrompido. Ambos
+são aceitos somente durante uma execução compatível com seu estado.
 
 ### Regra de RPM, duty e tempo ligado
 
@@ -275,6 +294,8 @@ Regras elétricas e de firmware:
 | `0x22` | `PWM_CONFIG_2` | `pause_ms_H, operation_mode, 0` | Grava byte alto da pausa e modo PWM. Resposta: 1 byte de resultado. |
 | `0x23` | `PWM_START` | `0, 0, 0` | Valida a configuração completa e inicia os bicos. Resposta: 1 byte de resultado. |
 | `0x24` | `PWM_STOP` | `0, 0, 0` | Para imediatamente a rotina PWM. Resposta: 1 byte de resultado. |
+| `0x25` | `CYCLE_PAUSE` | `0, 0, 0` | Pausa ADC e PWM, preservando o contador de ciclos. Resposta: 1 byte de resultado. |
+| `0x26` | `CYCLE_RESUME` | `0, 0, 0` | Retoma ADC e PWM a partir do contador preservado. Resposta: 1 byte de resultado. |
 | `0x7F` | `RESET` | `0, 0, 0` | Limpa estado SPI e reinicia a aquisição parada. Resposta: 1 byte de resultado. |
 | `0x80` | `READ_RESPONSE` | seguido de dummies | Usado somente na fase `RESPONSE`; não é uma `REQUEST`. |
 

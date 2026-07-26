@@ -150,6 +150,16 @@ bool acquisition_stream_request_stop(bool stop_pwm)
     return acquisition_stream_request(&command);
 }
 
+/** @brief Solicita pausa ou retomada do ciclo sem reinicializar seus contadores. */
+bool acquisition_stream_request_cycle_paused(bool paused)
+{
+    const acquisition_stream_command_t command = {
+        .type = paused ? ACQUISITION_STREAM_COMMAND_PAUSE_CYCLE :
+                         ACQUISITION_STREAM_COMMAND_RESUME_CYCLE,
+    };
+    return acquisition_stream_request(&command);
+}
+
 /** @brief Retira uma solicitação de controle na task SPI. */
 bool acquisition_stream_take_command(acquisition_stream_command_t *out_command)
 {

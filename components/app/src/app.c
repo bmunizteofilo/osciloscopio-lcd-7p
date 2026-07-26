@@ -58,8 +58,10 @@
 #define APP_SPI_OPCODE_PWM_CONFIG_2 0x22
 #define APP_SPI_OPCODE_PWM_START 0x23
 #define APP_SPI_OPCODE_PWM_STOP 0x24
+#define APP_SPI_OPCODE_CYCLE_PAUSE 0x25
+#define APP_SPI_OPCODE_CYCLE_RESUME 0x26
 #define APP_SPI_RESULT_OK 0x00
-#define APP_SPI_RETRY_PERIOD_MS 5000
+#define APP_SPI_RETRY_PERIOD_MS 1000
 #define APP_SPI_SUPERVISOR_STACK_SIZE 3072
 #define APP_SPI_SUPERVISOR_PRIORITY 5
 #define APP_SPI_ACQUISITION_STACK_SIZE 4096
@@ -241,17 +243,26 @@ static esp_err_t app_spi_alive(driver_spi_device_handle_t device)
     };
     uint8_t response_rx[APP_SPI_ALIVE_TRANSACTION_SIZE] = {0};
 
-    ESP_RETURN_ON_ERROR(driver_spi_transfer(device, request_tx, NULL, sizeof(request_tx)), TAG,
-                        "falha ao enviar consulta ALIVE");
-    ESP_RETURN_ON_ERROR(app_spi_wait_sync_level(true), TAG, "SYNC nao confirmou resposta ALIVE");
-    ESP_RETURN_ON_ERROR(driver_spi_transfer(device, response_tx, response_rx, sizeof(response_tx)), TAG,
-                        "falha ao ler resposta ALIVE");
-    ESP_RETURN_ON_ERROR(app_spi_wait_sync_level(false), TAG, "SYNC nao liberou nova requisicao ALIVE");
-    ESP_RETURN_ON_FALSE(response_rx[1] == APP_SPI_ALIVE_MAGIC_0 &&
-                            response_rx[2] == APP_SPI_ALIVE_MAGIC_1 &&
-                            response_rx[3] == APP_SPI_PROTOCOL_VERSION,
-                        ESP_ERR_NOT_FOUND, TAG, "assinatura STM32 invalida: %02X %02X %02X",
-                        response_rx[1], response_rx[2], response_rx[3]);
+    esp_err_t err = driver_spi_transfer(device, request_tx, NULL, sizeof(request_tx));
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = app_spi_wait_sync_level(true);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = driver_spi_transfer(device, response_tx, response_rx, sizeof(response_tx));
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = app_spi_wait_sync_level(false);
+    if (err != ESP_OK) {
+        return err;
+    }
+    if (response_rx[1] != APP_SPI_ALIVE_MAGIC_0 || response_rx[2] != APP_SPI_ALIVE_MAGIC_1 ||
+        response_rx[3] != APP_SPI_PROTOCOL_VERSION) {
+        return ESP_ERR_NOT_FOUND;
+    }
     return ESP_OK;
 }
 
@@ -404,6 +415,26 @@ static esp_err_t app_spi_stop_pwm(driver_spi_device_handle_t device)
     return ESP_OK;
 }
 
+/** @brief Solicita à STM32 a pausa coordenada do ADC e do ciclo PWM. */
+static esp_err_t app_spi_pause_cycle(driver_spi_device_handle_t device)
+{
+    ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_CYCLE_PAUSE, 0, 0, 0, 1), TAG,
+                        "falha ao pausar ciclo");
+    ESP_RETURN_ON_FALSE(s_spi_response_rx[1] == APP_SPI_RESULT_OK, ESP_FAIL, TAG,
+                        "STM recusou pausa de ciclo: %02X", s_spi_response_rx[1]);
+    return ESP_OK;
+}
+
+/** @brief Solicita à STM32 a retomada coordenada do ADC e do ciclo PWM. */
+static esp_err_t app_spi_resume_cycle(driver_spi_device_handle_t device)
+{
+    ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_CYCLE_RESUME, 0, 0, 0, 1), TAG,
+                        "falha ao retomar ciclo");
+    ESP_RETURN_ON_FALSE(s_spi_response_rx[1] == APP_SPI_RESULT_OK, ESP_FAIL, TAG,
+                        "STM recusou retomada de ciclo: %02X", s_spi_response_rx[1]);
+    return ESP_OK;
+}
+
 /**
  * @brief Lê um bloco ADC pronto e o publica para o consumidor no core 1.
  *
@@ -479,6 +510,21 @@ static void app_spi_acquisition_task(void *argument)
                 received_frames = 0;
                 read_errors = 0;
 #endif
+            } else if (command.type == ACQUISITION_STREAM_COMMAND_PAUSE_CYCLE && capturing) {
+                if (app_spi_pause_cycle(context->device) == ESP_OK) {
+                    capturing = false;
+                    acquisition_stream_clear();
+                    ESP_LOGI(TAG, "Ciclo e aquisicao SPI pausados");
+                } else {
+                    ESP_LOGW(TAG, "falha ao pausar ciclo SPI");
+                }
+            } else if (command.type == ACQUISITION_STREAM_COMMAND_RESUME_CYCLE && !capturing) {
+                if (app_spi_resume_cycle(context->device) == ESP_OK) {
+                    capturing = true;
+                    ESP_LOGI(TAG, "Ciclo e aquisicao SPI retomados");
+                } else {
+                    ESP_LOGW(TAG, "falha ao retomar ciclo SPI");
+                }
             } else if (command.type == ACQUISITION_STREAM_COMMAND_RECONFIGURE_PROFILE &&
                        command.start_config.profile < 4U && capturing) {
                 if (app_spi_stop_acquisition(context->device) == ESP_OK) {
@@ -578,7 +624,6 @@ static void app_spi_supervisor_task(void *argument)
     for (;;) {
         if (app_spi_alive(context->device) == ESP_OK) {
             acquisition_stream_set_power_control_online(true);
-            ESP_LOGI(TAG, "Placa STM32 detectada; aguardando comando de aquisicao");
             BaseType_t created = xTaskCreatePinnedToCore(app_spi_acquisition_task, "spi_acq",
                                                          APP_SPI_ACQUISITION_STACK_SIZE, context,
                                                          APP_SPI_ACQUISITION_PRIORITY,
@@ -589,8 +634,6 @@ static void app_spi_supervisor_task(void *argument)
             ESP_LOGE(TAG, "Falha ao criar a tarefa de aquisicao SPI");
         } else {
             acquisition_stream_set_power_control_online(false);
-            ESP_LOGW(TAG, "Placa STM32 nao detectada; nova consulta em %u s",
-                     APP_SPI_RETRY_PERIOD_MS / 1000);
         }
         vTaskDelay(pdMS_TO_TICKS(APP_SPI_RETRY_PERIOD_MS));
     }

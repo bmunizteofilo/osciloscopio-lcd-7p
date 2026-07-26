@@ -34,9 +34,19 @@ void acquisition_history_reset(void);
  * A aquisição SPI continua consumindo os blocos normalmente enquanto a escrita
  * estiver pausada, preservando a janela usada pela interface para análise.
  *
- * @param[in] paused @c true para descartar blocos ou @c false para gravá-los.
+ * @param[in] paused @c true para solicitar o descarte de blocos ou @c false para gravá-los.
  */
 void acquisition_history_set_write_paused(bool paused);
+
+/**
+ * @brief Informa se o produtor SPI confirmou que a escrita está congelada.
+ *
+ * A confirmação só ocorre entre blocos, garantindo que o leitor possa copiar
+ * uma janela sem concorrer com uma escrita parcial no ring buffer.
+ *
+ * @return @c true quando a escrita está efetivamente pausada.
+ */
+bool acquisition_history_is_write_pause_confirmed(void);
 
 /** @brief Insere um bloco ADC intercalado CH1..CH4; chamada somente pelo produtor SPI. */
 esp_err_t acquisition_history_push_payload(const uint8_t *payload, uint16_t frame_count,

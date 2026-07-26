@@ -43,6 +43,8 @@ typedef enum {
     ACQUISITION_STREAM_COMMAND_START,
     ACQUISITION_STREAM_COMMAND_RECONFIGURE_PROFILE,
     ACQUISITION_STREAM_COMMAND_STOP,
+    ACQUISITION_STREAM_COMMAND_PAUSE_CYCLE,
+    ACQUISITION_STREAM_COMMAND_RESUME_CYCLE,
 } acquisition_stream_command_type_t;
 
 /** @brief Solicitação de controle da aquisição. */
@@ -84,6 +86,17 @@ bool acquisition_stream_request_profile(uint8_t profile);
 
 /** @brief Solicita a parada segura da aquisição e, opcionalmente, do PWM. */
 bool acquisition_stream_request_stop(bool stop_pwm);
+
+/**
+ * @brief Solicita pausa ou retomada do ciclo PWM e da aquisição ADC.
+ *
+ * A pausa preserva o contador de ciclos da STM32. A retomada continua a
+ * execução a partir desse contador, sem reconfigurar os parâmetros PWM.
+ *
+ * @param[in] paused @c true para pausar ou @c false para retomar.
+ * @return @c true se o pedido foi aceito pela fila de comandos.
+ */
+bool acquisition_stream_request_cycle_paused(bool paused);
 
 /** @brief Retira uma solicitação de controle na task SPI. */
 bool acquisition_stream_take_command(acquisition_stream_command_t *out_command);

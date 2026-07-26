@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 #include "esp_check.h"
@@ -39,10 +40,29 @@ typedef enum {
     UI_FLOW_INJECTOR_75V_GDI
 } ui_flow_injector_type_t;
 
-/** @brief Receita identificada de um teste automático futuro. */
+/** @brief Modos automáticos transmitidos à Power Control a partir de 0x02. */
+typedef enum {
+    UI_FLOW_AUTOMATIC_TEST_LEQUE = 0x02,
+    UI_FLOW_AUTOMATIC_TEST_EQUALIZACAO_VAZAO,
+    UI_FLOW_AUTOMATIC_TEST_EQUALIZACAO_VAZAO_TEMPERATURA,
+    UI_FLOW_AUTOMATIC_TEST_ESTANQUEIDADE,
+    UI_FLOW_AUTOMATIC_TEST_ROTACOES,
+    UI_FLOW_AUTOMATIC_TEST_LEQUE_VAZAO_EQUALIZACAO,
+    UI_FLOW_AUTOMATIC_TEST_GENERIC,
+    UI_FLOW_AUTOMATIC_TEST_LEQUE_VAZAO_EQUALIZACAO_2,
+    UI_FLOW_AUTOMATIC_TEST_CIRCULACAO
+} ui_flow_automatic_test_mode_t;
+
+/** @brief Receita identificada de um teste automático. */
 typedef struct {
     const char *description;
-    uint8_t operation_mode;
+    ui_flow_automatic_test_mode_t operation_mode;
+    uint16_t rpm;
+    uint16_t final_rpm;
+    uint8_t pulse_ms;
+    uint16_t cycles;
+    uint16_t duration_seconds;
+    uint8_t ramp_count;
 } ui_flow_automatic_test_t;
 
 /** @brief Identificadores estáveis dos cards que podem ocupar os slots do menu. */
@@ -101,6 +121,9 @@ typedef struct {
     bluetooth_manager_status_t bluetooth_last_status;
     bool bluetooth_status_valid;
     lv_timer_t *menu_clock_timer;
+    lv_timer_t *standby_clock_timer;
+    lv_obj_t *standby_time_label;
+    lv_obj_t *standby_date_label;
     lv_timer_t *cycle_finished_timer;
     lv_obj_t *client_keyboard;
     lv_obj_t *client_textarea;
@@ -119,6 +142,9 @@ typedef struct {
     char report_search_text[REPORT_STORAGE_TEXT_LENGTH];
     char test_start_time[6];
     char test_end_time[6];
+    time_t test_start_timestamp;
+    time_t test_end_timestamp;
+    uint32_t test_cycles_configured;
     report_storage_record_t selected_report;
     bool selected_report_valid;
     bool final_report_from_list;
@@ -152,6 +178,10 @@ typedef struct {
     int32_t manual_temperature;
     ui_flow_injector_type_t injector_type;
     uint8_t automatic_operation_mode;
+    uint16_t automatic_duration_seconds;
+    uint16_t automatic_final_rpm;
+    uint8_t automatic_ramp_count;
+    bool test_mode_entry;
 } ui_flow_context_t;
 
 /** @brief Estado persistente da splash e de sua transição. */
@@ -214,6 +244,21 @@ static void ui_flow_destroy_about_panel(void);
 static void ui_flow_destroy_maintenance_panel(void);
 static void ui_flow_oscilloscope_menu_cb(void);
 static void ui_flow_show_general_panel(void);
+
+/**
+ * @brief Encaminha à task SPI o pedido de pausar ou retomar o ciclo PWM.
+ *
+ * @param[in] paused @c true para pausar ou @c false para retomar.
+ * @return @c true se o comando foi enfileirado.
+ */
+static bool ui_flow_oscilloscope_cycle_pause_cb(bool paused)
+{
+    if (!acquisition_stream_request_cycle_paused(paused)) {
+        ESP_LOGW("ui_flow", "nao foi possivel solicitar %s do ciclo", paused ? "pausa" : "retomada");
+        return false;
+    }
+    return true;
+}
 
 /** @brief Solicita à task SPI a troca de perfil ADC escolhida na base de tempo. */
 static void ui_flow_oscilloscope_profile_changed_cb(uint8_t profile)
@@ -419,10 +464,26 @@ static void ui_flow_ready_populate_info(void)
     ui_flow_ready_add_info_row(container, "Pressao", value);
     ui_flow_manual_format_value(UI_FLOW_MANUAL_PULSE, s_ui_flow.manual_pulse, value, sizeof(value));
     ui_flow_ready_add_info_row(container, "Pulso", value);
-    ui_flow_manual_format_value(UI_FLOW_MANUAL_RPM, s_ui_flow.manual_rpm, value, sizeof(value));
+    if (s_ui_flow.automatic_final_rpm != 0U) {
+        if (s_ui_flow.automatic_ramp_count > 1U) {
+            (void)snprintf(value, sizeof(value), "%ld a %u rpm (%ux)", (long)s_ui_flow.manual_rpm,
+                           (unsigned)s_ui_flow.automatic_final_rpm,
+                           (unsigned)s_ui_flow.automatic_ramp_count);
+        } else {
+            (void)snprintf(value, sizeof(value), "%ld a %u rpm", (long)s_ui_flow.manual_rpm,
+                           (unsigned)s_ui_flow.automatic_final_rpm);
+        }
+    } else {
+        ui_flow_manual_format_value(UI_FLOW_MANUAL_RPM, s_ui_flow.manual_rpm, value, sizeof(value));
+    }
     ui_flow_ready_add_info_row(container, "RPM", value);
-    ui_flow_manual_format_value(UI_FLOW_MANUAL_CYCLES, s_ui_flow.manual_cycles, value, sizeof(value));
-    ui_flow_ready_add_info_row(container, "Ciclos", value);
+    if (s_ui_flow.automatic_duration_seconds != 0U) {
+        (void)snprintf(value, sizeof(value), "%u s", (unsigned)s_ui_flow.automatic_duration_seconds);
+        ui_flow_ready_add_info_row(container, "Duracao", value);
+    } else {
+        ui_flow_manual_format_value(UI_FLOW_MANUAL_CYCLES, s_ui_flow.manual_cycles, value, sizeof(value));
+        ui_flow_ready_add_info_row(container, "Ciclos", value);
+    }
     ui_flow_manual_format_value(UI_FLOW_MANUAL_PAUSE, s_ui_flow.manual_pause, value, sizeof(value));
     ui_flow_ready_add_info_row(container, "Tempo de Pausa", value);
     ui_flow_manual_format_value(UI_FLOW_MANUAL_TEMPERATURE, s_ui_flow.manual_temperature, value, sizeof(value));
@@ -446,8 +507,15 @@ static void ui_flow_cycle_finished_populate_info(void)
     lv_obj_set_style_pad_top(container, 6, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(container, 6, LV_PART_MAIN);
     lv_obj_set_style_pad_row(container, 0, LV_PART_MAIN);
-    ui_flow_ready_add_info_row(container, "Tempo Total", "00:05");
-    ui_flow_ready_add_info_row(container, "Ciclos Executados", "120");
+    const uint32_t total_seconds = s_ui_flow.test_end_timestamp >= s_ui_flow.test_start_timestamp ?
+                                   (uint32_t)(s_ui_flow.test_end_timestamp - s_ui_flow.test_start_timestamp) : 0U;
+    char total_text[16] = {0};
+    char cycles_text[16] = {0};
+    (void)snprintf(total_text, sizeof(total_text), "%02u:%02u:%02u", (unsigned)(total_seconds / 3600U),
+                   (unsigned)((total_seconds / 60U) % 60U), (unsigned)(total_seconds % 60U));
+    (void)snprintf(cycles_text, sizeof(cycles_text), "%u", (unsigned)s_ui_flow.test_cycles_configured);
+    ui_flow_ready_add_info_row(container, "Tempo Total", total_text);
+    ui_flow_ready_add_info_row(container, "Ciclos Executados", cycles_text);
     ui_flow_ready_add_info_row(container, "Pressao Media", "85.4 bar");
     ui_flow_ready_add_info_row(container, "Temperatura Media", "42 C");
 }
@@ -455,6 +523,7 @@ static void ui_flow_cycle_finished_populate_info(void)
 /** @brief Finaliza a demonstração temporária e abre o resumo do ciclo. */
 static void ui_flow_oscilloscope_cycle_finished_cb(bool pwm_completed)
 {
+    s_ui_flow.test_end_timestamp = time(NULL);
     date_time_format_time(s_ui_flow.test_end_time, sizeof(s_ui_flow.test_end_time));
     (void)acquisition_stream_request_stop(!pwm_completed);
     ui_flow_show_cycle_finished();
@@ -489,6 +558,9 @@ static void ui_flow_manual_cancel_cb(lv_event_t *event)
 static void ui_flow_manual_setting_button_cb(lv_event_t *event)
 {
     const ui_flow_manual_setting_t setting = (ui_flow_manual_setting_t)(uintptr_t)lv_event_get_user_data(event);
+    if (s_ui_flow.test_mode_entry && setting == UI_FLOW_MANUAL_CYCLES) {
+        return;
+    }
     char value[24] = {0};
     ui_flow_close_manual_popup();
     s_ui_flow.manual_active_setting = setting;
@@ -1223,6 +1295,66 @@ static void ui_flow_close_report_popup(void)
 }
 
 /**
+ * @brief Atualiza data e hora exibidas na tela Stand By.
+ *
+ * @param[in] timer Timer LVGL periódico.
+ */
+static void ui_flow_standby_clock_update_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    if (s_ui_flow.standby_time_label == NULL || s_ui_flow.standby_date_label == NULL) {
+        return;
+    }
+    char time_text[6] = {0};
+    char date_text[11] = {0};
+    date_time_format_time(time_text, sizeof(time_text));
+    date_time_format_date(date_text, sizeof(date_text));
+    lv_label_set_text(s_ui_flow.standby_time_label, time_text);
+    lv_label_set_text(s_ui_flow.standby_date_label, date_text);
+}
+
+/**
+ * @brief Fecha o aviso de Power Control ausente e retorna ao menu principal.
+ *
+ * @param[in] event Evento de toque do botão OK.
+ */
+static void ui_flow_power_control_unavailable_ok_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_report_popup();
+    ui_flow_show_main_menu();
+}
+
+/** @brief Mostra o aviso de que a placa Power Control não foi detectada. */
+static void ui_flow_show_power_control_unavailable_popup(void)
+{
+    ui_flow_close_report_popup();
+    s_ui_flow.report_popup = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.report_popup, 380, 165);
+    lv_obj_center(s_ui_flow.report_popup);
+    lv_obj_set_style_bg_color(s_ui_flow.report_popup, lv_color_hex(0x101416), LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.report_popup, lv_color_hex(0x2f3539), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.report_popup, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_ui_flow.report_popup, 8, LV_PART_MAIN);
+
+    lv_obj_t *message = lv_label_create(s_ui_flow.report_popup);
+    lv_label_set_text(message, "Sem placa Power Control\nconectada.");
+    lv_obj_set_style_text_color(message, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_align(message, LV_ALIGN_TOP_MID, 0, 30);
+
+    lv_obj_t *ok = lv_button_create(s_ui_flow.report_popup);
+    lv_obj_set_size(ok, 100, 38);
+    lv_obj_align(ok, LV_ALIGN_BOTTOM_MID, 0, -14);
+    lv_obj_set_style_bg_color(ok, lv_color_hex(0x09572e), LV_PART_MAIN);
+    lv_obj_add_event_cb(ok, ui_flow_power_control_unavailable_ok_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label = lv_label_create(ok);
+    lv_label_set_text(label, "OK");
+    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(label);
+}
+
+/**
  * @brief Fecha o status da gravação e abre o relatório quando o salvamento teve sucesso.
  *
  * @param[in] event Evento de toque do botão OK.
@@ -1349,8 +1481,9 @@ static void ui_flow_save_client_report_cb(lv_event_t *event)
     report.pressure_bar = (uint16_t)s_ui_flow.manual_pressure;
     report.pulse_ms = (uint16_t)s_ui_flow.manual_pulse;
     report.rpm = (uint32_t)s_ui_flow.manual_rpm;
-    report.cycles_executed = (uint32_t)s_ui_flow.manual_cycles;
-    report.total_seconds = 5;
+    report.cycles_executed = s_ui_flow.test_cycles_configured;
+    report.total_seconds = s_ui_flow.test_end_timestamp >= s_ui_flow.test_start_timestamp ?
+                           (uint32_t)(s_ui_flow.test_end_timestamp - s_ui_flow.test_start_timestamp) : 0U;
     uint32_t sequence = 0;
     const bool saved = report_storage_save(&report, &sequence) == ESP_OK;
     if (saved) {
@@ -2271,7 +2404,8 @@ static acquisition_stream_start_config_t ui_flow_build_acquisition_config(void)
         .profile = osc_get_acquisition_profile(),
         .rpm = (uint16_t)s_ui_flow.manual_rpm,
         .ton_ms = (uint8_t)s_ui_flow.manual_pulse,
-        .cycles = (uint16_t)(operation_mode == 0U ? 1 : s_ui_flow.manual_cycles),
+        .cycles = (uint16_t)(operation_mode == 0U ? 1 :
+                             (s_ui_flow.automatic_duration_seconds != 0U ? 1 : s_ui_flow.manual_cycles)),
         .pause_ms = (uint16_t)s_ui_flow.manual_pause,
         .operation_mode = operation_mode,
     };
@@ -2285,6 +2419,10 @@ static acquisition_stream_start_config_t ui_flow_build_acquisition_config(void)
 static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
 {
     (void)event;
+    if (!acquisition_stream_is_power_control_online()) {
+        ui_flow_show_power_control_unavailable_popup();
+        return;
+    }
     ui_flow_stop_cycle_finished_timer();
     ui_flow_destroy_wifi_panel();
     ui_flow_destroy_bluetooth_panel();
@@ -2294,13 +2432,17 @@ static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
     }
     osc_set_menu_callback(ui_flow_oscilloscope_menu_cb);
     osc_set_cycle_finished_callback(ui_flow_oscilloscope_cycle_finished_cb);
+    osc_set_cycle_pause_callback(ui_flow_oscilloscope_cycle_pause_cb);
     osc_set_profile_changed_callback(ui_flow_oscilloscope_profile_changed_cb);
     if (osc_create(NULL) != ESP_OK || osc_get_screen() == NULL) {
         return;
     }
+    const acquisition_stream_start_config_t config = ui_flow_build_acquisition_config();
+    s_ui_flow.test_start_timestamp = time(NULL);
+    s_ui_flow.test_end_timestamp = 0;
+    s_ui_flow.test_cycles_configured = config.cycles;
     date_time_format_time(s_ui_flow.test_start_time, sizeof(s_ui_flow.test_start_time));
     memset(s_ui_flow.test_end_time, 0, sizeof(s_ui_flow.test_end_time));
-    const acquisition_stream_start_config_t config = ui_flow_build_acquisition_config();
     if (!acquisition_stream_request_start(&config)) {
         ESP_LOGW("ui_flow", "nao foi possivel solicitar inicio da aquisicao SPI");
     }
@@ -2315,6 +2457,64 @@ static void ui_flow_oscilloscope_button_cb(lv_event_t *event)
 static void ui_flow_bicos_step_one_button_cb(lv_event_t *event)
 {
     (void)event;
+    ui_flow_show_bicos_step_one();
+}
+
+/** @brief Fecha o aviso de teste automático ainda indisponível. */
+static void ui_flow_automatic_test_unavailable_ok_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_flow_close_report_popup();
+}
+
+/** @brief Informa que a receita selecionada ainda não é suportada pelo firmware. */
+static void ui_flow_show_automatic_test_unavailable_popup(void)
+{
+    ui_flow_close_report_popup();
+    s_ui_flow.report_popup = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_ui_flow.report_popup, 400, 165);
+    lv_obj_center(s_ui_flow.report_popup);
+    lv_obj_set_style_bg_color(s_ui_flow.report_popup, lv_color_hex(0x101416), LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_ui_flow.report_popup, lv_color_hex(0x8b1e1e), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_ui_flow.report_popup, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_ui_flow.report_popup, 8, LV_PART_MAIN);
+    lv_obj_t *message = lv_label_create(s_ui_flow.report_popup);
+    lv_label_set_text(message, "Teste indisponivel para esta\nversao de firmware.");
+    lv_obj_set_style_text_color(message, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_align(message, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_t *ok = lv_button_create(s_ui_flow.report_popup);
+    lv_obj_set_size(ok, 100, 38);
+    lv_obj_align(ok, LV_ALIGN_BOTTOM_MID, 0, -14);
+    lv_obj_set_style_bg_color(ok, lv_color_hex(0x303638), LV_PART_MAIN);
+    lv_obj_add_event_cb(ok, ui_flow_automatic_test_unavailable_ok_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label = lv_label_create(ok);
+    lv_label_set_text(label, "OK");
+    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_center(label);
+}
+
+/**
+ * @brief Abre o fluxo de teste pelo card Modo Teste do menu principal.
+ *
+ * @param[in] event Evento de toque do card.
+ */
+static void ui_flow_test_mode_menu_button_cb(lv_event_t *event)
+{
+    (void)event;
+    s_ui_flow.test_mode_entry = true;
+    ui_flow_show_bicos_step_one();
+}
+
+/**
+ * @brief Abre o fluxo de limpeza pelo card correspondente do menu principal.
+ *
+ * @param[in] event Evento de toque do card.
+ */
+static void ui_flow_cleaning_menu_button_cb(lv_event_t *event)
+{
+    (void)event;
+    s_ui_flow.test_mode_entry = false;
     ui_flow_show_bicos_step_one();
 }
 
@@ -2345,6 +2545,9 @@ static void ui_flow_bicos_manual_button_cb(lv_event_t *event)
 {
     (void)event;
     s_ui_flow.automatic_operation_mode = 0;
+    s_ui_flow.automatic_duration_seconds = 0U;
+    s_ui_flow.automatic_final_rpm = 0U;
+    s_ui_flow.automatic_ramp_count = 0U;
     ui_flow_show_bicos_config_manual();
 }
 
@@ -2370,7 +2573,7 @@ static void ui_flow_automatic_tests_more_button_cb(lv_event_t *event)
 }
 
 /**
- * @brief Registra a descrição do teste automático escolhido e inicia o osciloscópio.
+ * @brief Registra a receita automática escolhida e abre sua confirmação.
  *
  * @param[in] event Evento de toque do teste automático.
  */
@@ -2378,12 +2581,32 @@ static void ui_flow_automatic_test_start_cb(lv_event_t *event)
 {
     const ui_flow_automatic_test_t *test = lv_event_get_user_data(event);
     if (test != NULL) {
+        if (test->operation_mode == UI_FLOW_AUTOMATIC_TEST_ESTANQUEIDADE ||
+            test->operation_mode == UI_FLOW_AUTOMATIC_TEST_GENERIC) {
+            ui_flow_show_automatic_test_unavailable_popup();
+            return;
+        }
         strncpy(s_ui_flow.selected_test_description, test->description,
                 sizeof(s_ui_flow.selected_test_description) - 1U);
         s_ui_flow.selected_test_description[sizeof(s_ui_flow.selected_test_description) - 1U] = '\0';
-        s_ui_flow.automatic_operation_mode = test->operation_mode;
+        s_ui_flow.automatic_operation_mode = (uint8_t)test->operation_mode;
+        s_ui_flow.automatic_duration_seconds = test->duration_seconds;
+        s_ui_flow.automatic_final_rpm = test->final_rpm;
+        s_ui_flow.automatic_ramp_count = test->ramp_count;
+        s_ui_flow.manual_pressure = 6;
+        s_ui_flow.manual_pause = 0;
+        s_ui_flow.manual_temperature = 25;
+        if (test->rpm != 0U) {
+            s_ui_flow.manual_rpm = test->rpm;
+        }
+        if (test->pulse_ms != 0U) {
+            s_ui_flow.manual_pulse = test->pulse_ms;
+        }
+        if (test->cycles != 0U) {
+            s_ui_flow.manual_cycles = test->cycles;
+        }
     }
-    ui_flow_oscilloscope_button_cb(event);
+    ui_flow_show_ready_to_start();
 }
 
 /** @brief Retorna do osciloscópio ao menu sem destruir sua tela persistente. */
@@ -2404,6 +2627,12 @@ static void ui_flow_oscilloscope_menu_cb(void)
 static void ui_flow_show_main_menu(void)
 {
     ui_flow_stop_cycle_finished_timer();
+    if (s_ui_flow.standby_clock_timer != NULL) {
+        lv_timer_delete(s_ui_flow.standby_clock_timer);
+        s_ui_flow.standby_clock_timer = NULL;
+    }
+    s_ui_flow.standby_time_label = NULL;
+    s_ui_flow.standby_date_label = NULL;
     lv_display_trigger_activity(NULL);
     ui_flow_close_manual_popup();
     ui_flow_destroy_general_panel();
@@ -2430,13 +2659,13 @@ static void ui_flow_show_main_menu(void)
     }
     if (guider_ui.screen_menu_principal.button_modo_teste != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_menu_principal.button_modo_teste,
-                            ui_flow_bicos_step_one_button_cb,
+                            ui_flow_test_mode_menu_button_cb,
                             LV_EVENT_CLICKED,
                             NULL);
     }
     if (guider_ui.screen_menu_principal.button_limpeza_bico != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_menu_principal.button_limpeza_bico,
-                            ui_flow_bicos_step_one_button_cb,
+                            ui_flow_cleaning_menu_button_cb,
                             LV_EVENT_CLICKED,
                             NULL);
     }
@@ -2469,6 +2698,19 @@ static void ui_flow_show_standby(void)
     lv_obj_t *image = guider_ui.screen_stand_by.image_stand_by;
     lv_obj_add_event_cb(guider_ui.screen_stand_by.screen, ui_flow_standby_activity_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(image, ui_flow_standby_activity_cb, LV_EVENT_PRESSED, NULL);
+    wifi_manager_status_t wifi_status = {0};
+    if (wifi_manager_get_status(&wifi_status) == ESP_OK && wifi_status.enabled) {
+        s_ui_flow.standby_time_label = lv_label_create(guider_ui.screen_stand_by.screen);
+        s_ui_flow.standby_date_label = lv_label_create(guider_ui.screen_stand_by.screen);
+        lv_obj_set_style_text_color(s_ui_flow.standby_time_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+        lv_obj_set_style_text_color(s_ui_flow.standby_date_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+        lv_obj_set_style_text_font(s_ui_flow.standby_time_label, &lv_font_montserratMedium_25, LV_PART_MAIN);
+        lv_obj_set_style_text_font(s_ui_flow.standby_date_label, &lv_font_montserratMedium_16, LV_PART_MAIN);
+        lv_obj_set_pos(s_ui_flow.standby_time_label, 24, 20);
+        lv_obj_set_pos(s_ui_flow.standby_date_label, 24, 54);
+        s_ui_flow.standby_clock_timer = lv_timer_create(ui_flow_standby_clock_update_cb, 1000, NULL);
+        ui_flow_standby_clock_update_cb(s_ui_flow.standby_clock_timer);
+    }
     lv_screen_load_anim(guider_ui.screen_stand_by.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
 
@@ -2531,6 +2773,14 @@ static void ui_flow_show_bicos_step_two(void)
         lv_obj_add_event_cb(guider_ui.screen_bicos_step_two.button_modo_manual,
                             ui_flow_bicos_manual_button_cb, LV_EVENT_CLICKED, NULL);
     }
+    if (s_ui_flow.test_mode_entry) {
+        if (guider_ui.screen_bicos_step_two.button_modo_manual != NULL) {
+            lv_obj_set_x(guider_ui.screen_bicos_step_two.button_modo_manual, 207);
+        }
+        if (guider_ui.screen_bicos_step_two.button_modo_automatico != NULL) {
+            lv_obj_add_flag(guider_ui.screen_bicos_step_two.button_modo_automatico, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
     lv_screen_load_anim(guider_ui.screen_bicos_step_two.screen, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
 
@@ -2542,6 +2792,9 @@ static void ui_flow_show_bicos_config_manual(void)
     setup_screen_bicos_step_config_manual(&guider_ui);
     if (guider_ui.screen_bicos_step_config_manual.screen == NULL) {
         return;
+    }
+    if (s_ui_flow.test_mode_entry) {
+        s_ui_flow.manual_cycles = 0;
     }
     ui_flow_manual_create_navigation_indicators();
     ui_flow_manual_update_labels();
@@ -2567,6 +2820,10 @@ static void ui_flow_show_bicos_config_manual(void)
                                 LV_EVENT_CLICKED, (void *)(uintptr_t)setting);
         }
     }
+    if (s_ui_flow.test_mode_entry && guider_ui.screen_bicos_step_config_manual.button_ciclos != NULL) {
+        lv_obj_add_state(guider_ui.screen_bicos_step_config_manual.button_ciclos, LV_STATE_DISABLED);
+        lv_obj_remove_flag(guider_ui.screen_bicos_step_config_manual.button_ciclos, LV_OBJ_FLAG_CLICKABLE);
+    }
     lv_screen_load_anim(guider_ui.screen_bicos_step_config_manual.screen,
                         LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
 }
@@ -2583,7 +2840,9 @@ static void ui_flow_show_ready_to_start(void)
     ui_flow_ready_populate_info();
     if (guider_ui.screen_pronto_pra_iniciar.button_voltar != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_pronto_pra_iniciar.button_voltar,
-                            ui_flow_bicos_manual_button_cb, LV_EVENT_CLICKED, NULL);
+                            s_ui_flow.automatic_operation_mode >= UI_FLOW_AUTOMATIC_TEST_LEQUE ?
+                                ui_flow_automatic_tests_button_cb : ui_flow_bicos_manual_button_cb,
+                            LV_EVENT_CLICKED, NULL);
     }
     if (guider_ui.screen_pronto_pra_iniciar.button_iniciar != NULL) {
         lv_obj_add_event_cb(guider_ui.screen_pronto_pra_iniciar.button_iniciar,
@@ -3139,13 +3398,18 @@ static void ui_flow_show_automatic_tests(void)
         guider_ui.screen_testes_automaticos.button_auto
     };
     static const ui_flow_automatic_test_t tests[] = {
-        {.description = "Teste Leque", .operation_mode = 2},
-        {.description = "Equalizacao de Vazao", .operation_mode = 3},
-        {.description = "Equalizacao Vazao/Temperatura", .operation_mode = 4},
-        {.description = "Teste de Estanqueidade", .operation_mode = 5},
-        {.description = "Teste em Rotacoes", .operation_mode = 6},
-        {.description = "Leque/Vazao/Equalizacao", .operation_mode = 7},
-        {.description = "Automatico", .operation_mode = 8},
+        {.description = "Teste Leque", .operation_mode = UI_FLOW_AUTOMATIC_TEST_LEQUE,
+         .rpm = 750U, .pulse_ms = 3U, .cycles = 2000U},
+        {.description = "Equalizacao de Vazao", .operation_mode = UI_FLOW_AUTOMATIC_TEST_EQUALIZACAO_VAZAO,
+         .rpm = 2000U, .pulse_ms = 6U, .cycles = 2000U},
+        {.description = "Equalizacao Vazao/Temperatura", .operation_mode = UI_FLOW_AUTOMATIC_TEST_EQUALIZACAO_VAZAO_TEMPERATURA,
+         .rpm = 3000U, .pulse_ms = 6U, .cycles = 2000U},
+        {.description = "Teste de Estanqueidade", .operation_mode = UI_FLOW_AUTOMATIC_TEST_ESTANQUEIDADE},
+        {.description = "Teste em Rotacoes", .operation_mode = UI_FLOW_AUTOMATIC_TEST_ROTACOES,
+         .rpm = 350U, .final_rpm = 5000U, .pulse_ms = 3U, .duration_seconds = 30U},
+        {.description = "Leque/Vazao/Equalizacao", .operation_mode = UI_FLOW_AUTOMATIC_TEST_LEQUE_VAZAO_EQUALIZACAO,
+         .rpm = 750U, .pulse_ms = 3U, .cycles = 2000U},
+        {.description = "Automatico", .operation_mode = UI_FLOW_AUTOMATIC_TEST_GENERIC},
     };
     for (uint32_t index = 0; index < sizeof(test_buttons) / sizeof(test_buttons[0]); index++) {
         if (test_buttons[index] != NULL) {
@@ -3182,8 +3446,10 @@ static void ui_flow_show_automatic_tests_second_page(void)
         guider_ui.screen_testes_automaticos_2.button_teste_circulacao
     };
     static const ui_flow_automatic_test_t tests[] = {
-        {.description = "Leque/Vazao/Equalizacao", .operation_mode = 9},
-        {.description = "Teste de Circulacao", .operation_mode = 10},
+        {.description = "Leque/Vazao/Equalizacao", .operation_mode = UI_FLOW_AUTOMATIC_TEST_LEQUE_VAZAO_EQUALIZACAO_2,
+         .rpm = 350U, .final_rpm = 6300U, .pulse_ms = 3U, .duration_seconds = 80U, .ramp_count = 2U},
+        {.description = "Teste de Circulacao", .operation_mode = UI_FLOW_AUTOMATIC_TEST_CIRCULACAO,
+         .rpm = 350U, .final_rpm = 5000U, .pulse_ms = 3U, .duration_seconds = 95U, .ramp_count = 5U},
     };
     for (uint32_t index = 0; index < sizeof(test_buttons) / sizeof(test_buttons[0]); index++) {
         if (test_buttons[index] != NULL) {

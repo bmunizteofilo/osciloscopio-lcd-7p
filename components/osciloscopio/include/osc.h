@@ -25,6 +25,8 @@ typedef void (*osc_menu_callback_t)(void);
 typedef void (*osc_cycle_finished_callback_t)(bool pwm_completed);
 /** @brief Função chamada quando a base de tempo exige um novo perfil ADC. */
 typedef void (*osc_profile_changed_callback_t)(uint8_t profile);
+/** @brief Função chamada para pausar ou retomar o ciclo na Power Control. */
+typedef bool (*osc_cycle_pause_callback_t)(bool paused);
 
 /**
  * @brief Define a ação executada pelo botão Menu do osciloscópio.
@@ -39,6 +41,14 @@ void osc_set_menu_callback(osc_menu_callback_t callback);
  * @param[in] callback Função de retorno para o resumo do ciclo.
  */
 void osc_set_cycle_finished_callback(osc_cycle_finished_callback_t callback);
+
+/**
+ * @brief Define a ação executada pelo botão Parar Ciclo.
+ *
+ * @param[in] callback Função de retorno; recebe @c true para pausar e
+ * @c false para retomar o ciclo.
+ */
+void osc_set_cycle_pause_callback(osc_cycle_pause_callback_t callback);
 
 /** @brief Define a ação executada ao trocar o perfil ADC derivado da base de tempo. */
 void osc_set_profile_changed_callback(osc_profile_changed_callback_t callback);

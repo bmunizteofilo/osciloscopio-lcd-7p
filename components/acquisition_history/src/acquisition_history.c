@@ -14,7 +14,9 @@ static uint32_t s_sample_head;
 static uint32_t s_total_frames;
 static uint32_t s_generation;
 static uint32_t s_frame_rate_hz;
-/** @brief Controla o descarte de blocos enquanto a interface esta pausada. */
+/** @brief Pedido da interface para congelar a escrita entre blocos SPI. */
+static bool s_write_pause_requested;
+/** @brief Confirmação do produtor de que não há escrita parcial em andamento. */
 static bool s_write_paused;
 /** @brief Notificação unidirecional do Core 0 para a interface. */
 static bool s_cycle_done;
@@ -53,7 +55,16 @@ void acquisition_history_reset(void)
 /** @brief Define se o produtor SPI deve gravar ou descartar novos blocos ADC. */
 void acquisition_history_set_write_paused(bool paused)
 {
-    __atomic_store_n(&s_write_paused, paused, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_write_pause_requested, paused, __ATOMIC_RELEASE);
+    if (!paused) {
+        __atomic_store_n(&s_write_paused, false, __ATOMIC_RELEASE);
+    }
+}
+
+/** @brief Informa se o produtor confirmou a pausa da escrita entre blocos SPI. */
+bool acquisition_history_is_write_pause_confirmed(void)
+{
+    return __atomic_load_n(&s_write_paused, __ATOMIC_ACQUIRE);
 }
 
 /** @brief Insere um bloco ADC intercalado CH1..CH4; chamada somente pelo produtor SPI. */
@@ -63,7 +74,8 @@ esp_err_t acquisition_history_push_payload(const uint8_t *payload, uint16_t fram
     ESP_RETURN_ON_FALSE(payload != NULL && frame_count > 0U && frame_rate_hz > 0U,
                         ESP_ERR_INVALID_ARG, TAG, "bloco ADC invalido");
     ESP_RETURN_ON_FALSE(s_samples[0] != NULL, ESP_ERR_INVALID_STATE, TAG, "historico nao inicializado");
-    if (__atomic_load_n(&s_write_paused, __ATOMIC_ACQUIRE)) {
+    if (__atomic_load_n(&s_write_pause_requested, __ATOMIC_ACQUIRE)) {
+        __atomic_store_n(&s_write_paused, true, __ATOMIC_RELEASE);
         return ESP_OK;
     }
 
