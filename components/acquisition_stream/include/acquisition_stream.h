@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 /** @brief Quantidade máxima de frames em um bloco do perfil FAST. */
-#define ACQUISITION_STREAM_MAX_FRAMES 256U
+#define ACQUISITION_STREAM_MAX_FRAMES 512U
 /** @brief Quantidade de bytes ADC em um frame de quatro canais. */
 #define ACQUISITION_STREAM_FRAME_BYTES 8U
 /** @brief Tamanho máximo do payload de um bloco ADC. */

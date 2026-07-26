@@ -33,7 +33,7 @@
 #define APP_SPI_CS_GPIO DRIVER_GPIO_NUM_20
 #define APP_SPI_DRV_GPIO DRIVER_GPIO_NUM_2
 #define APP_SPI_SYNC_GPIO DRIVER_GPIO_NUM_42
-#define APP_SPI_MAX_TRANSFER_SIZE 4096
+#define APP_SPI_MAX_TRANSFER_SIZE 4102
 #define APP_SPI_CLOCK_HZ (10U * 1000U * 1000U)
 #define APP_SPI_QUEUE_SIZE 4
 #define APP_SPI_DUMMY_BYTE 0xff
@@ -47,7 +47,7 @@
 #define APP_SPI_REQUEST_SIZE 4
 #define APP_SPI_RESPONSE_PREFIX_SIZE 1
 #define APP_SPI_BLOCK_HEADER_SIZE 5
-#define APP_SPI_MAX_BLOCK_PAYLOAD_SIZE 2048
+#define APP_SPI_MAX_BLOCK_PAYLOAD_SIZE 4096
 #define APP_SPI_MAX_RESPONSE_SIZE (APP_SPI_RESPONSE_PREFIX_SIZE + APP_SPI_BLOCK_HEADER_SIZE + APP_SPI_MAX_BLOCK_PAYLOAD_SIZE)
 #define APP_SPI_OPCODE_CONFIG_PROFILE 0x01
 #define APP_SPI_OPCODE_START 0x02
@@ -444,7 +444,7 @@ static esp_err_t app_spi_resume_cycle(driver_spi_device_handle_t device)
  */
 static esp_err_t app_spi_read_block(driver_spi_device_handle_t device, uint8_t expected_profile)
 {
-    static const uint16_t frames_per_profile[] = {256U, 256U, 128U, 64U};
+    static const uint16_t frames_per_profile[] = {256U, 512U, 128U, 64U};
     ESP_RETURN_ON_FALSE(expected_profile < 4U, ESP_ERR_INVALID_ARG, TAG, "perfil SPI invalido");
     const uint16_t expected_frames = frames_per_profile[expected_profile];
     ESP_RETURN_ON_ERROR(app_spi_execute_command(device, APP_SPI_OPCODE_READ_BLOCK, 0, 0, 0,
@@ -482,7 +482,7 @@ static void app_spi_acquisition_task(void *argument)
     }
     acquisition_stream_set_spi_task(xTaskGetCurrentTaskHandle());
 #if APP_SPI_ACQUISITION_METRICS_LOG
-    static const uint16_t frames_per_profile[] = {256U, 256U, 128U, 64U};
+    static const uint16_t frames_per_profile[] = {256U, 512U, 128U, 64U};
 #endif
     bool capturing = false;
     uint8_t active_profile = 0;

@@ -85,7 +85,7 @@ bytes por segundo = taxa de frames × 8
 | Perfil | Taxa total ADC | Taxa por canal / frames | Dados brutos | Frames/bloco | Payload |
 |---|---:|---:|---:|---:|---:|
 | `FAST` (`0`) | 400 kS/s | 100 kS/s | 800 kB/s | reservado na STM32 | não enviado pela ESP |
-| `MEDIUM` (`1`) | 100 kS/s | 25 kS/s | 200 kB/s | 256 | 2048 B |
+| `MEDIUM` (`1`) | 100 kS/s | 25 kS/s | 200 kB/s | 512 | 4096 B |
 | `SLOW` (`2`) | 50 kS/s | 12,5 kS/s | 100 kB/s | 128 | 1024 B |
 | `VERY_SLOW` (`3`) | 10 kS/s | 2,5 kS/s | 20 kB/s | 64 | 512 B |
 
@@ -112,14 +112,14 @@ Ao trocar de base, a ESP reinicia ADC/DMA no perfil correspondente e descarta o 
 Os tamanhos dos blocos foram ajustados para reduzir a taxa de handshakes SPI. Portanto, no firmware STM32, a função que mapeia perfil para `frame_count` deve usar:
 
 ```c
-case APP_ACQUISITION_PROFILE_MEDIUM:    *frame_count = 256U; break;
+case APP_ACQUISITION_PROFILE_MEDIUM:    *frame_count = 512U; break;
 case APP_ACQUISITION_PROFILE_SLOW:      *frame_count = 128U; break;
 case APP_ACQUISITION_PROFILE_VERY_SLOW: *frame_count = 64U; break;
 ```
 
 Consequências dos novos blocos:
 
-- `MEDIUM`: 256 frames, payload de 2048 bytes, período de 10,24 ms e aproximadamente 98 blocos/s;
+- `MEDIUM`: 512 frames, payload de 4096 bytes, período de 20,48 ms e aproximadamente 49 blocos/s;
 - `SLOW`: 128 frames, payload de 1024 bytes, período de 10,24 ms e aproximadamente 98 blocos/s;
 - `VERY_SLOW`: 64 frames, payload de 512 bytes, período de 25,6 ms e aproximadamente 39 blocos/s.
 
